@@ -1,7 +1,3 @@
-"""
-README for AHCAgent CLI.
-"""
-
 # AHCAgent CLI
 
 A standalone command-line tool for solving AtCoder Heuristic Contest problems using AlphaEvolve algorithm.
