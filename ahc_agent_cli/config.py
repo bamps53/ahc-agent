@@ -1,138 +1,82 @@
 """
-Configuration management for AHCAgent CLI.
-
-This module provides utilities for managing configuration.
+Default configuration for AHCAgent CLI.
 """
 
 import os
 import yaml
-import logging
-from typing import Dict, Any, Optional
-
-from .utils.file_io import read_yaml, write_yaml
-
-logger = logging.getLogger(__name__)
-
-DEFAULT_CONFIG = {
-    # LLM settings
-    "llm": {
-        "provider": "openai",
-        "model": "gpt-4",
-        "temperature": 0.2,
-        "max_tokens": 4096,
-        "timeout": 60
-    },
-    
-    # Docker settings
-    "docker": {
-        "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
-        "mount_path": "/workspace",
-        "timeout": 300
-    },
-    
-    # Evolution settings
-    "evolution": {
-        "max_generations": 30,
-        "population_size": 10,
-        "time_limit_seconds": 1800,
-        "score_plateau_generations": 5
-    },
-    
-    # C++ compilation settings
-    "cpp": {
-        "compiler": "g++",
-        "flags": "-std=c++17 -O2 -Wall",
-        "execution_timeout": 10
-    },
-    
-    # Workspace settings
-    "workspace": {
-        "base_dir": "~/ahc_workspace",
-        "keep_history": True,
-        "max_sessions": 10
-    }
-}
+from typing import Dict, Any, Optional, List, Union
 
 class Config:
     """
     Configuration manager for AHCAgent CLI.
     """
     
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_path_or_dict: Optional[Union[str, Dict[str, Any]]] = None):
         """
-        Initialize the configuration manager.
+        Initialize configuration.
         
         Args:
-            config_file: Path to configuration file (default: None, use environment variable or default)
+            config_path_or_dict: Path to configuration file or configuration dictionary
         """
-        self.config_file = config_file or os.environ.get("AHCAGENT_CONFIG")
-        self.config = DEFAULT_CONFIG.copy()
+        # Default configuration
+        self.config = {
+            "llm": {
+                "provider": "litellm",
+                "model": "gpt-4",
+                "temperature": 0.7,
+                "max_tokens": 4000,
+                "timeout": 60
+            },
+            "docker": {
+                "enabled": True,
+                "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
+                "cpp_compiler": "g++",
+                "cpp_flags": "-std=c++17 -O2 -Wall"
+            },
+            "workspace": {
+                "base_dir": "~/ahc_workspace"
+            },
+            "evolution": {
+                "max_generations": 30,
+                "population_size": 10,
+                "time_limit_seconds": 1800,
+                "score_plateau_generations": 5
+            },
+            "analyzer": {
+                "detailed_analysis": True
+            },
+            "strategist": {
+                "detailed_strategy": True
+            },
+            "debugger": {
+                "execution_timeout": 10
+            },
+            "problem_logic": {
+                "test_cases_count": 3
+            },
+            "batch": {
+                "parallel": 1,
+                "output_dir": "~/ahc_batch"
+            }
+        }
         
-        # Load configuration from file if specified
-        if self.config_file and os.path.exists(self.config_file):
-            self._load_config()
+        # Load configuration from file or dictionary
+        if config_path_or_dict:
+            if isinstance(config_path_or_dict, str):
+                # Load from file
+                try:
+                    with open(config_path_or_dict, "r") as f:
+                        loaded_config = yaml.safe_load(f)
+                        if loaded_config:
+                            self._merge_configs(self.config, loaded_config)
+                except Exception as e:
+                    print(f"Error loading configuration from {config_path_or_dict}: {str(e)}")
+            elif isinstance(config_path_or_dict, dict):
+                # Load from dictionary
+                self._merge_configs(self.config, config_path_or_dict)
         
         # Override with environment variables
-        self._override_from_env()
-        
-        logger.debug(f"Initialized configuration: {self.config}")
-    
-    def _load_config(self) -> None:
-        """
-        Load configuration from file.
-        """
-        try:
-            logger.info(f"Loading configuration from {self.config_file}")
-            file_config = read_yaml(self.config_file)
-            
-            # Update config with file values
-            self._update_config(self.config, file_config)
-            
-            logger.debug(f"Loaded configuration: {self.config}")
-        
-        except Exception as e:
-            logger.error(f"Error loading configuration from {self.config_file}: {str(e)}")
-            logger.warning("Using default configuration")
-    
-    def _update_config(self, target: Dict[str, Any], source: Dict[str, Any]) -> None:
-        """
-        Update configuration recursively.
-        
-        Args:
-            target: Target configuration
-            source: Source configuration
-        """
-        for key, value in source.items():
-            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
-                # Recursively update nested dictionaries
-                self._update_config(target[key], value)
-            else:
-                # Update value
-                target[key] = value
-    
-    def _override_from_env(self) -> None:
-        """
-        Override configuration with environment variables.
-        """
-        # LLM settings
-        if os.environ.get("AHCAGENT_LLM_PROVIDER"):
-            self.config["llm"]["provider"] = os.environ.get("AHCAGENT_LLM_PROVIDER")
-        
-        if os.environ.get("AHCAGENT_LLM_MODEL"):
-            self.config["llm"]["model"] = os.environ.get("AHCAGENT_LLM_MODEL")
-        
-        # Docker settings
-        if os.environ.get("AHCAGENT_DOCKER_IMAGE"):
-            self.config["docker"]["image"] = os.environ.get("AHCAGENT_DOCKER_IMAGE")
-        
-        if os.environ.get("AHCAGENT_NO_DOCKER") == "1":
-            self.config["docker"]["enabled"] = False
-        else:
-            self.config["docker"]["enabled"] = True
-        
-        # Workspace settings
-        if os.environ.get("AHCAGENT_WORKSPACE"):
-            self.config["workspace"]["base_dir"] = os.environ.get("AHCAGENT_WORKSPACE")
+        self._load_from_env()
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -143,19 +87,20 @@ class Config:
             default: Default value if key not found
             
         Returns:
-            Configuration value
+            Configuration value or default
         """
+        # Split key by dots
         keys = key.split(".")
+        
+        # Navigate through config
         value = self.config
-        
-        try:
-            for k in keys:
+        for k in keys:
+            if isinstance(value, dict) and k in value:
                 value = value[k]
-            
-            return value
+            else:
+                return default
         
-        except (KeyError, TypeError):
-            return default
+        return value
     
     def set(self, key: str, value: Any) -> None:
         """
@@ -165,46 +110,31 @@ class Config:
             key: Configuration key (dot notation for nested keys)
             value: Configuration value
         """
+        # Split key by dots
         keys = key.split(".")
-        target = self.config
         
-        # Navigate to the target dictionary
-        for k in keys[:-1]:
-            if k not in target:
-                target[k] = {}
-            elif not isinstance(target[k], dict):
-                target[k] = {}
-            
-            target = target[k]
+        # Navigate through config
+        config = self.config
+        for i, k in enumerate(keys[:-1]):
+            if k not in config:
+                config[k] = {}
+            config = config[k]
         
-        # Set the value
-        target[keys[-1]] = value
+        # Set value
+        config[keys[-1]] = value
     
-    def save(self, config_file: Optional[str] = None) -> None:
+    def save(self, path: str) -> None:
         """
-        Save configuration to file.
+        Save configuration to a file.
         
         Args:
-            config_file: Path to configuration file (default: None, use self.config_file)
+            path: Path to save configuration
         """
-        file_path = config_file or self.config_file
-        
-        if not file_path:
-            raise ValueError("No configuration file specified")
-        
         try:
-            logger.info(f"Saving configuration to {file_path}")
-            write_yaml(file_path, self.config)
-            
-            # Update config_file if a new file was specified
-            if config_file:
-                self.config_file = config_file
-            
-            logger.debug(f"Saved configuration: {self.config}")
-        
+            with open(path, "w") as f:
+                yaml.dump(self.config, f, default_flow_style=False)
         except Exception as e:
-            logger.error(f"Error saving configuration to {file_path}: {str(e)}")
-            raise
+            print(f"Error saving configuration to {path}: {str(e)}")
     
     def export(self) -> Dict[str, Any]:
         """
@@ -222,7 +152,46 @@ class Config:
         Args:
             config: Configuration dictionary
         """
-        self.config = DEFAULT_CONFIG.copy()
-        self._update_config(self.config, config)
+        self._merge_configs(self.config, config)
+    
+    def _merge_configs(self, base: Dict[str, Any], override: Dict[str, Any]) -> None:
+        """
+        Merge override configuration into base configuration.
         
-        logger.debug(f"Imported configuration: {self.config}")
+        Args:
+            base: Base configuration
+            override: Override configuration
+        """
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                self._merge_configs(base[key], value)
+            else:
+                base[key] = value
+    
+    def _load_from_env(self) -> None:
+        """
+        Load configuration from environment variables.
+        
+        Environment variables should be in the format AHC_SECTION_KEY.
+        For example, AHC_LLM_MODEL will override llm.model.
+        """
+        for env_key, env_value in os.environ.items():
+            if env_key.startswith("AHC_"):
+                # Convert environment variable name to config key
+                # AHC_LLM_MODEL -> llm.model
+                config_key = env_key[4:].lower().replace("_", ".")
+                
+                # Convert value to appropriate type
+                if env_value.lower() == "true":
+                    value = True
+                elif env_value.lower() == "false":
+                    value = False
+                elif env_value.isdigit():
+                    value = int(env_value)
+                elif env_value.replace(".", "", 1).isdigit() and env_value.count(".") == 1:
+                    value = float(env_value)
+                else:
+                    value = env_value
+                
+                # Set config value
+                self.set(config_key, value)
