@@ -82,8 +82,8 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "S", "BLE", "B", "A", "C4", "T10", "ISC", "ICN", "PIE", "PYI", "PT", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "NPY", "PERF", "RUF"]
-ignore = ["ISC001", "B023", "PERF203", "BLE001", "S108", "PT011", "S603", "S607"]
+select = ["E", "F", "W", "I", "UP", "S", "BLE", "B", "A", "C4", "T10", "ISC", "ICN", "PIE", "PYI", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "NPY", "PERF", "RUF"]
+ignore = ["ISC001", "B023", "PERF203", "BLE001", "S108", "S603", "S607"]
 fixable = ["ALL"]
 unfixable = []
 
