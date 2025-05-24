@@ -31,15 +31,15 @@ SESSION_ID=$(ahc-agent status | grep "Session ID:" | head -n 1 | awk '{print $3}
 
 if [ -n "$SESSION_ID" ]; then
     echo "Found session: $SESSION_ID"
-    
+
     # Check session status
     echo "Checking session status..."
     ahc-agent status $SESSION_ID
-    
+
     # Submit best solution
     echo "Submitting best solution..."
     ahc-agent submit $SESSION_ID --output ~/ahc_test_workspace/best_solution.cpp
-    
+
     echo "Best solution saved to ~/ahc_test_workspace/best_solution.cpp"
 else
     echo "No session found"

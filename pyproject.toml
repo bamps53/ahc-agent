@@ -36,6 +36,7 @@ dev = [
   "ruff>=0.4.4",
   "pre-commit<3.7",
   "pytest>=8.2.0",
+  "pytest-asyncio>=0.20.0",
 ]
 
 [project.urls]
@@ -56,19 +57,7 @@ where = ["."]
 [tool.ruff]
 # Pythonバージョンを指定
 # target-version = "py38"
-
-# 有効にするルールセット
-select = ["E", "F", "W", "I", "UP", "S", "BLE", "B", "A", "C4", "T10", "ISC", "ICN", "PIE", "PYI", "PT", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "NPY", "PERF", "RUF"]
-ignore = []
-
-# 1行の最大文字数
 line-length = 128
-
-# 自動修正可能なルールを修正する
-fixable = ["ALL"]
-unfixable = []
-
-# 除外するファイルやディレクトリ
 exclude = [
     ".bzr",
     ".direnv",
@@ -92,12 +81,35 @@ exclude = [
     "venv",
 ]
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "S", "BLE", "B", "A", "C4", "T10", "ISC", "ICN", "PIE", "PYI", "PT", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "ARG", "NPY", "PERF", "RUF"]
+ignore = ["ISC001", "B023", "PERF203", "BLE001", "S108", "PT011", "S603", "S607"]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["ahc_agent_cli"]
+force-sort-within-sections = true
+
+[tool.ruff.lint.per-file-ignores]
+  "tests/**/*.py" = ["S101"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.ruff.lint]
-[tool.ruff.lint.isort]
-known-first-party = ["ahc_agent_cli"]
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
