@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 backend-path = ["."]
 
 [project]
-name = "ahc-agent-cli"
+name = "ahc-agent"
 version = "0.1.0"
 authors = [
     { name = "AHCAgent Team", email = "ahcagent@example.com" },
@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/ahc-agent-cli"
+Homepage = "https://github.com/bamps53/ahc-agent"
 
 [project.scripts]
 ahc-agent = "ahc_agent_cli.cli:main"

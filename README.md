@@ -15,7 +15,7 @@ A standalone command-line tool for solving AtCoder Heuristic Contest (AHC) probl
 ## 🛠️ Installation
 
 ```bash
-pip install ahc-agent-cli
+pip install ahc-agent
 ```
 
 ## 📋 Requirements

@@ -15,7 +15,7 @@ AlphaEvolve アルゴリズムを使用して AtCoder Heuristic Contest (AHC) �
 ## 🛠️ インストール
 
 ```bash
-pip install ahc-agent-cli
+pip install ahc-agent
 ```
 
 ## 📋 要件
