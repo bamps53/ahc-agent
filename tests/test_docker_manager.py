@@ -50,41 +50,45 @@ class TestDockerManager:
         assert result["stderr"] == "Error"
         mock_subprocess_run.assert_called_once()
 
-    @pytest.mark.skip(reason="DockerManager API changed")
     @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
     def test_run_container_with_input_file(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="test input", stderr="")
-        image_name = "test_image_input"
-        command = "cat /app/input.txt"
-        docker_manager.workspace_dir = temp_workspace  # Ensure it uses the temp workspace
-        with tempfile.NamedTemporaryFile(mode="w+", delete=False, dir=temp_workspace) as tmp_input_file:
-            input_content = "test input"
-            tmp_input_file.write(input_content)
-            host_input_file_path = tmp_input_file.name
-        container_input_file_path = "/app/input.txt"
-        volume_mapping = {host_input_file_path: container_input_file_path}
-        stdout, stderr = docker_manager.run_container(
-            image_name,
-            command,
-            volume_mapping=volume_mapping,
-            remove_container=True,
-            detach=False,
-        )
-        expected_docker_command = [
+
+        input_filename = "input.txt"
+        host_input_file_path = os.path.join(temp_workspace, input_filename)
+        input_content = "test input"
+        with open(host_input_file_path, "w+") as f:
+            f.write(input_content)
+
+        # The command will be executed in the container's working directory,
+        # which is docker_manager.mount_path (e.g., /workspace)
+        command = f"cat {input_filename}"
+
+        # docker_manager.workspace_dir is set to temp_workspace in the fixture.
+        # run_command mounts temp_workspace to docker_manager.mount_path.
+        result = docker_manager.run_command(command, work_dir=temp_workspace)
+        stdout = result["stdout"]
+        stderr = result["stderr"]
+
+        expected_docker_command_args = [
             "docker",
             "run",
             "--rm",
             "-v",
-            f"{host_input_file_path}:{container_input_file_path}",
-            image_name,
-            "sh",
+            f"{os.path.abspath(temp_workspace)}:{docker_manager.mount_path}",
+            "-w",
+            docker_manager.mount_path,
+            docker_manager.image,  # Image from DockerManager's config
+            "/bin/bash",
             "-c",
             command,
         ]
-        mock_subprocess_run.assert_called_once_with(expected_docker_command, capture_output=True, text=True, check=False)
+
+        mock_subprocess_run.assert_called_once_with(
+            expected_docker_command_args, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
+        )
         assert stdout.strip() == input_content
         assert stderr == ""
-        os.remove(host_input_file_path)
 
     @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
     def test_init(self, mock_subprocess_run, docker_manager):
@@ -299,102 +303,6 @@ class TestDockerManager:
         # Check subprocess.run calls
         mock_subprocess_run.assert_called_once_with(["docker", "container", "prune", "-f"], capture_output=True, check=False)
 
-    @pytest.mark.skip(reason="DockerManager API changed")
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
-    def test_run_container_with_volume_mapping(self, mock_subprocess_run, docker_manager, temp_workspace):  # noqa: ARG002
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        image_name = "test_image"
-        command = "echo hello"
-
-        with tempfile.TemporaryDirectory() as tmp_host_dir:
-            host_path = tmp_host_dir
-            container_path = "/app/data"
-            volume_mapping = {host_path: container_path}
-
-            docker_manager.run_container(
-                image_name,
-                command,
-                volume_mapping=volume_mapping,
-                remove_container=True,
-                detach=False,
-            )
-
-            expected_docker_command = [
-                "docker",
-                "run",
-                "--rm",
-                "-v",
-                f"{host_path}:{container_path}",
-                image_name,
-                "sh",
-                "-c",
-                command,
-            ]
-            mock_subprocess_run.assert_called_once_with(expected_docker_command, capture_output=True, text=True, check=False)
-
-    @pytest.mark.skip(reason="DockerManager API changed")
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
-    def test_build_image_existing_dockerfile(self, mock_subprocess_run, docker_manager, temp_workspace):
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        docker_manager.workspace_dir = temp_workspace
-        dockerfile_path = os.path.join(temp_workspace, "Dockerfile")
-
-        os.makedirs(temp_workspace, exist_ok=True)
-        with open(dockerfile_path, "w") as f:
-            f.write("FROM ubuntu")
-
-        image_name = "test_build_image"
-        docker_manager.build_image(image_name, dockerfile_path=dockerfile_path, context_path=temp_workspace)
-
-        expected_command = ["docker", "build", "-t", image_name, "-f", dockerfile_path, temp_workspace]
-        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False)
-
-    @pytest.mark.skip(reason="DockerManager API changed")
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
-    def test_build_image_no_dockerfile_or_context(self, mock_subprocess_run, docker_manager, temp_workspace):
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        docker_manager.workspace_dir = temp_workspace
-
-        os.makedirs(temp_workspace, exist_ok=True)
-
-        image_name = "test_build_no_df_image"
-        docker_manager.build_image(image_name, context_path=temp_workspace)
-
-        expected_command = ["docker", "build", "-t", image_name, temp_workspace]
-        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False)
-
-    @pytest.mark.skip(reason="DockerManager API changed")
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
-    def test_copy_to_container(self, mock_subprocess_run, docker_manager, temp_workspace):
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        container_id = "test_container"
-
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=temp_workspace) as tmp_src_file:
-            tmp_src_file.write("test content")
-            src_path = tmp_src_file.name
-
-        dest_path = "/app/dest_copy.txt"
-
-        docker_manager.copy_to_container(container_id, src_path, dest_path)
-
-        expected_command = ["docker", "cp", src_path, f"{container_id}:{dest_path}"]
-        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False)
-
-        os.remove(src_path)
-
-    @pytest.mark.skip(reason="DockerManager API changed")
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
-    def test_copy_from_container(self, mock_subprocess_run, docker_manager, temp_workspace):
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        container_id = "test_container_from"
-        src_path_container = "/app/src_copy_from.txt"
-        dest_path_host = os.path.join(temp_workspace, "test_dest_copy_from.txt")
-
-        docker_manager.copy_from_container(container_id, src_path_container, dest_path_host)
-
-        expected_command = ["docker", "cp", f"{container_id}:{src_path_container}", dest_path_host]
-        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False)
-
     @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
     def test_compile_cpp(self, mock_subprocess_run, docker_manager):
         """
@@ -466,3 +374,122 @@ class TestDockerManager:
         # The input file name is dynamic, so we check parts of the command
         assert actual_run_command_str.startswith("time -p ./test_exec < ")
         assert actual_run_command_str.endswith(" 2>&1")
+
+    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    def test_copy_to_container(self, mock_subprocess_run, docker_manager, temp_workspace):
+        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        container_id = "test_container_for_copy"
+
+        # Create a dummy source file on the host
+        src_filename = "test_source_file.txt"
+        host_src_path = os.path.join(temp_workspace, src_filename)
+        with open(host_src_path, "w") as f:
+            f.write("Test content for copy to container")
+
+        container_dest_path = "/app/destination_file.txt"
+
+        result = docker_manager.copy_to_container(container_id, host_src_path, container_dest_path)
+
+        assert result["success"] is True
+        expected_command = ["docker", "cp", host_src_path, f"{container_id}:{container_dest_path}"]
+        mock_subprocess_run.assert_called_once_with(
+            expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
+        )
+
+    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    def test_copy_from_container(self, mock_subprocess_run, docker_manager, temp_workspace):
+        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        container_id = "test_container_for_copy_from"
+        container_src_path = "/app/source_file_in_container.txt"
+        host_dest_path = os.path.join(temp_workspace, "destination_file_on_host.txt")
+
+        # We don't actually create the source file in the container for this mock test,
+        # as subprocess.run is mocked.
+
+        result = docker_manager.copy_from_container(container_id, container_src_path, host_dest_path)
+
+        assert result["success"] is True
+        expected_command = ["docker", "cp", f"{container_id}:{container_src_path}", host_dest_path]
+        mock_subprocess_run.assert_called_once_with(
+            expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
+        )
+
+    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    def test_build_image_existing_dockerfile(self, mock_subprocess_run, docker_manager, temp_workspace):
+        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="Image built successfully", stderr="")
+
+        # Create a dummy Dockerfile in the temporary workspace
+        dockerfile_content = "FROM alpine\nCMD echo 'Hello from Docker'"
+        dockerfile_path = os.path.join(temp_workspace, "Dockerfile")
+        with open(dockerfile_path, "w") as f:
+            f.write(dockerfile_content)
+
+        image_tag = "test-image:latest"
+        result = docker_manager.build_image(context_path=temp_workspace, image_tag=image_tag)
+
+        assert result["success"] is True
+        assert result["stdout"] == "Image built successfully"
+        expected_command = ["docker", "build", "-t", image_tag, temp_workspace]
+        mock_subprocess_run.assert_called_once_with(
+            expected_command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=docker_manager.build_timeout,  # Use build_timeout here
+        )
+
+    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    def test_build_image_no_dockerfile_or_context(self, mock_subprocess_run, docker_manager, temp_workspace):
+        # Case 1: Context path does not exist
+        non_existent_context_path = os.path.join(temp_workspace, "non_existent_dir")
+        # subprocess.run should not be called if context path check fails early,
+        # but if it were, it would likely be an error from docker CLI.
+        # For now, assume DockerManager might not pre-check path validity before calling docker CLI.
+        mock_subprocess_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error: path not found")
+
+        result_no_context = docker_manager.build_image(context_path=non_existent_context_path)
+        assert result_no_context["success"] is False
+        # Depending on implementation, stderr might come from our code or docker
+        # assert "Error: path not found" in result_no_context["stderr"]
+        # subprocess.run should have been called if DockerManager doesn't pre-validate
+        mock_subprocess_run.assert_called_with(
+            ["docker", "build", "-t", docker_manager.image, non_existent_context_path],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=docker_manager.build_timeout,
+        )
+        mock_subprocess_run.reset_mock()  # Reset mock for the next case
+
+        # Case 2: Dockerfile does not exist in a valid context path
+        # Create a valid context directory
+        valid_context_path = os.path.join(temp_workspace, "valid_context")
+        os.makedirs(valid_context_path, exist_ok=True)
+        non_existent_dockerfile = "Dockerfile.nonexistent"
+
+        mock_subprocess_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error: Dockerfile not found")
+        result_no_dockerfile = docker_manager.build_image(context_path=valid_context_path, dockerfile=non_existent_dockerfile)
+
+        assert result_no_dockerfile["success"] is False
+        # assert "Error: Dockerfile not found" in result_no_dockerfile["stderr"]
+        expected_command_no_dockerfile = [
+            "docker",
+            "build",
+            "-t",
+            docker_manager.image,
+            "-f",
+            os.path.join(valid_context_path, non_existent_dockerfile),
+            valid_context_path,
+        ]
+        mock_subprocess_run.assert_called_with(
+            expected_command_no_dockerfile,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=docker_manager.build_timeout,
+        )
+
+    @pytest.mark.skip(reason="Not yet implemented")
+    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    def test_run_container_with_volume_mapping(self, mock_subprocess_run, docker_manager, temp_workspace):
+        pass

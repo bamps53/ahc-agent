@@ -210,7 +210,7 @@ class SolutionStrategist:
     async def _generate_data_structures(
         self,
         problem_analysis: Dict[str, Any],
-        high_level_strategy: Dict[str, Any],  # noqa: ARG002
+        high_level_strategy: Dict[str, Any],
         algorithm_selection: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
