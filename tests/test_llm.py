@@ -20,7 +20,7 @@ class TestLLMClient:
         """
         Create a LLMClient instance for testing.
         """
-        config = {"provider": "litellm", "model": "gpt-4", "api_key": "test_key", "temperature": 0.7, "max_tokens": 1000}
+        config = {"provider": "litellm", "model": "o4-mini", "api_key": "test_key", "temperature": 0.7, "max_tokens": 1000}
         return LLMClient(config)
 
     @patch("ahc_agent.utils.llm.litellm.acompletion")
@@ -44,7 +44,7 @@ class TestLLMClient:
         # Check call arguments
         mock_completion.assert_called_once()
         call_args = mock_completion.call_args[1]
-        assert call_args["model"] == "gpt-4"
+        assert call_args["model"] == "o4-mini"
         assert call_args["messages"][0]["content"] == "Test prompt"
         assert call_args["temperature"] == 0.7
         assert call_args["max_tokens"] == 1000
@@ -70,7 +70,7 @@ class TestLLMClient:
         # Check call arguments
         mock_completion.assert_called_once()
         call_args = mock_completion.call_args[1]
-        assert call_args["model"] == "gpt-4"
+        assert call_args["model"] == "o4-mini"
         assert "Test prompt" in call_args["messages"][0]["content"]
         assert "JSON" in call_args["messages"][0]["content"]
 
@@ -156,7 +156,7 @@ class TestLLMClient:
         os.environ["LITELLM_API_KEY"] = "env_test_key"
 
         # Create client with minimal config
-        config = {"provider": "litellm", "model": "gpt-4"}
+        config = {"provider": "litellm", "model": "o4-mini"}
         client = LLMClient(config)
 
         # Check that API key was loaded from environment

@@ -124,17 +124,18 @@ def solve(ctx, problem_file, session_id, time_limit, generations, population_siz
         problem_text = f.read()
 
     # Run solver
-    asyncio.run(_solve_problem(config, problem_text, session_id, interactive))
+    asyncio.run(_solve_problem(config, problem_text, problem_file, session_id, interactive))
 
 
-async def _solve_problem(config, problem_text, session_id=None, interactive=False):
+async def _solve_problem(config, problem_text, problem_file, session_id=None, interactive=False):
     """
     Solve a problem asynchronously.
     """
     # Initialize clients and modules
     llm_client = LLMClient(config.get("llm"))
     docker_manager = DockerManager(config.get("docker"))
-    knowledge_base = KnowledgeBase(config.get("workspace"))
+    problem_id = os.path.splitext(os.path.basename(problem_file))[0]
+    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"), problem_id=problem_id)
     problem_analyzer = ProblemAnalyzer(llm_client, config.get("analyzer"))
     solution_strategist = SolutionStrategist(llm_client, config.get("strategist"))
     evolutionary_engine = EvolutionaryEngine(llm_client, config.get("evolution"))
@@ -575,7 +576,7 @@ def status(ctx, session_id, watch):
     workspace_dir = os.path.expanduser(workspace_dir)
 
     # Initialize knowledge base
-    knowledge_base = KnowledgeBase(config.get("workspace"))
+    knowledge_base = KnowledgeBase(workspace_dir)
 
     if session_id:
         # Show single session status
@@ -691,7 +692,7 @@ def stop(ctx, session_id):
     config = ctx.obj["config"]
 
     # Initialize knowledge base
-    knowledge_base = KnowledgeBase(config.get("workspace"))
+    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"))
 
     # Get session
     session = knowledge_base.get_session(session_id)
@@ -716,7 +717,7 @@ def submit(ctx, session_id, output):
     config = ctx.obj["config"]
 
     # Initialize knowledge base
-    knowledge_base = KnowledgeBase(config.get("workspace"))
+    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"))
 
     # Get session
     session = knowledge_base.get_session(session_id)
@@ -905,7 +906,8 @@ async def _run_experiment(config, experiment_id, problem, parameter_set, experim
     # Initialize clients and modules
     llm_client = LLMClient(experiment_config.get("llm"))
     docker_manager = DockerManager(experiment_config.get("docker"))
-    knowledge_base = KnowledgeBase({"workspace_dir": experiment_dir})
+    problem_id = os.path.splitext(os.path.basename(problem["path"]))[0]
+    knowledge_base = KnowledgeBase(experiment_dir, problem_id=problem_id)
     problem_analyzer = ProblemAnalyzer(llm_client, experiment_config.get("analyzer"))
     solution_strategist = SolutionStrategist(llm_client, experiment_config.get("strategist"))
     evolutionary_engine = EvolutionaryEngine(llm_client, experiment_config.get("evolution"))

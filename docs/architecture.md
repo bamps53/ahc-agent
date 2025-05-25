@@ -159,8 +159,8 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
 # LLM設定 (LiteLLM経由)
 llm:
   provider: "litellm" # LiteLLMがサポートするプロバイダ名 (例: "openai", "anthropic", "google")
-  model: "gpt-4" # 使用するモデル名
-  temperature: 0.7 # 生成時の多様性 (0.0-1.0)
+  model: "o4-mini" # 使用するモデル名
+  temperature: 1.0 # 生成時の多様性 (0.0-1.0)
   max_tokens: 4000 # 最大生成トークン数
   timeout: 60 # APIリクエストのタイムアウト（秒）
   # api_key: "YOUR_API_KEY" # APIキー (環境変数での設定を推奨)
@@ -209,10 +209,10 @@ batch:
 
 ### 環境変数
 
-設定は環境変数によっても上書き可能です。環境変数は `AHC_` プレフィックスに続き、セクションとキーをアンダースコアで連結した形式で指定します (例: `AHC_LLM_MODEL="gpt-4-turbo"`)。
+設定は環境変数によっても上書き可能です。環境変数は `AHC_` プレフィックスに続き、セクションとキーをアンダースコアで連結した形式で指定します (例: `AHC_LLM_MODEL="o4-mini"`)。
 
 - `AHC_LLM_PROVIDER`: LLM プロバイダ (例: `openai`)
-- `AHC_LLM_MODEL`: LLM モデル (例: `gpt-4-turbo`)
+- `AHC_LLM_MODEL`: LLM モデル (例: `o4-mini`)
 - `AHC_LLM_TEMPERATURE`: 温度設定 (例: `0.5`)
 - `AHC_DOCKER_ENABLED`: Docker 有効化 (`true`/`false`)
 - `AHC_DOCKER_IMAGE`: Docker イメージ名
@@ -320,7 +320,7 @@ parameter_sets:
     evolution.score_plateau_generations: 3
   - name: "large_population"
     evolution.population_size: 20
-    llm.model: "gpt-4-turbo"
+    llm.model: "o4-mini"
 
 # 実験設定
 experiments:

@@ -22,7 +22,7 @@ class Config:
         """
         # Default configuration
         self.config = {
-            "llm": {"provider": "litellm", "model": "gpt-4", "temperature": 0.7, "max_tokens": 4000, "timeout": 60},
+            "llm": {"provider": "litellm", "model": "o4-mini", "temperature": 1.0, "max_tokens": 4000, "timeout": 60},
             "docker": {
                 "enabled": True,
                 "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",

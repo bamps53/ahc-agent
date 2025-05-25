@@ -15,10 +15,6 @@ import litellm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-4.1"
-DEFAULT_TEMPERATURE = 0.7
-DEFAULT_MAX_TOKENS = 1000
-DEFAULT_TIMEOUT = 60
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_DELAY = 1
 
@@ -38,7 +34,7 @@ class LLMClient:
         Args:
             config: Configuration dictionary
                 - provider: LLM provider (default: from env var AHCAGENT_LLM_PROVIDER or "openai")
-                - model: LLM model (default: from env var AHCAGENT_LLM_MODEL or "gpt-4")
+                - model: LLM model (default: from env var AHCAGENT_LLM_MODEL or "o4-mini")
                 - api_key: API key (default: from env var based on provider)
                 - temperature: Temperature (default: 0.2)
                 - max_tokens: Maximum tokens (default: 4096)
@@ -55,7 +51,7 @@ class LLMClient:
         self.provider = self.config.get("provider") or os.environ.get("AHCAGENT_LLM_PROVIDER") or "openai"
 
         # Get model from config or env var or default
-        self.model = self.config.get("model") or os.environ.get("AHCAGENT_LLM_MODEL") or "gpt-4"
+        self.model = self.config.get("model") or os.environ.get("AHCAGENT_LLM_MODEL") or "o4-mini"
 
         # Get API key from config or env var based on provider
         api_key_env_var = f"{self.provider.upper()}_API_KEY"

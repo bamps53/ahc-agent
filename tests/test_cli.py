@@ -175,7 +175,7 @@ class TestCLI:
         """
         # Mock Config
         mock_config_instance = MagicMock()
-        mock_config_instance.get.return_value = "gpt-4"
+        mock_config_instance.get.return_value = "o4-mini"
         mock_config.return_value = mock_config_instance
 
         # Run config get command
@@ -183,7 +183,7 @@ class TestCLI:
 
         # Check result
         assert result.exit_code == 0
-        assert "llm.model = gpt-4" in result.output
+        assert "llm.model = o4-mini" in result.output
 
         # Check Config calls
         mock_config_instance.get.assert_called_with("llm.model")

@@ -23,7 +23,7 @@ class TestConfig:
         Create a sample configuration dictionary.
         """
         return {
-            "llm": {"provider": "litellm", "model": "gpt-4", "temperature": 0.7},
+            "llm": {"provider": "litellm", "model": "o4-mini", "temperature": 0.7},
             "docker": {"enabled": True, "image": "test-image"},
             "workspace": {"base_dir": "/tmp/workspace"},
         }
@@ -36,7 +36,7 @@ class TestConfig:
 
         # Check default values
         assert config.get("llm.provider") == "litellm"
-        assert config.get("llm.model") == "gpt-4"
+        assert config.get("llm.model") == "o4-mini"
         assert config.get("docker.enabled") is True
         assert config.get("workspace.base_dir") == "./workspace"
 
@@ -55,7 +55,7 @@ class TestConfig:
 
             # Check values
             assert config.get("llm.provider") == "litellm"
-            assert config.get("llm.model") == "gpt-4"
+            assert config.get("llm.model") == "o4-mini"
             assert config.get("llm.temperature") == 0.7
             assert config.get("docker.enabled") is True
             assert config.get("docker.image") == "test-image"
@@ -73,7 +73,7 @@ class TestConfig:
 
         # Check values
         assert config.get("llm.provider") == "litellm"
-        assert config.get("llm.model") == "gpt-4"
+        assert config.get("llm.model") == "o4-mini"
         assert config.get("llm.temperature") == 0.7
         assert config.get("docker.enabled") is True
         assert config.get("docker.image") == "test-image"
@@ -88,13 +88,13 @@ class TestConfig:
 
         # Test get with dot notation
         assert config.get("llm.provider") == "litellm"
-        assert config.get("llm.model") == "gpt-4"
+        assert config.get("llm.model") == "o4-mini"
         assert config.get("docker.enabled") is True
 
         # Test get with dictionary
         expected_llm_config = {
             "provider": "litellm",
-            "model": "gpt-4",
+            "model": "o4-mini",
             "temperature": 0.7,
             "max_tokens": 4000,  # Default value
             "timeout": 60,  # Default value
@@ -147,7 +147,7 @@ class TestConfig:
 
             # Check values
             assert new_config.get("llm.provider") == "litellm"
-            assert new_config.get("llm.model") == "gpt-4"
+            assert new_config.get("llm.model") == "o4-mini"
             assert new_config.get("llm.temperature") == 0.7
             assert new_config.get("docker.enabled") is True
             assert new_config.get("docker.image") == "test-image"
@@ -168,7 +168,7 @@ class TestConfig:
 
         # Check exported config
         expected_export = {
-            "llm": {"provider": "litellm", "model": "gpt-4", "temperature": 0.7, "max_tokens": 4000, "timeout": 60},
+            "llm": {"provider": "litellm", "model": "o4-mini", "temperature": 0.7, "max_tokens": 4000, "timeout": 60},
             "docker": {"enabled": True, "image": "test-image", "cpp_compiler": "g++", "cpp_flags": "-std=c++17 -O2 -Wall"},
             "workspace": {"base_dir": "/tmp/workspace"},
             "evolution": {
@@ -197,7 +197,7 @@ class TestConfig:
 
         # Check values
         assert config.get("llm.provider") == "litellm"
-        assert config.get("llm.model") == "gpt-4"
+        assert config.get("llm.model") == "o4-mini"
         assert config.get("llm.temperature") == 0.7
         assert config.get("docker.enabled") is True
         assert config.get("docker.image") == "test-image"
@@ -220,7 +220,7 @@ class TestConfig:
         Test merging of configs.
         """
         # Create base config
-        base_config = {"llm": {"provider": "litellm", "model": "gpt-4", "temperature": 0.7}, "docker": {"enabled": True}}
+        base_config = {"llm": {"provider": "litellm", "model": "o4-mini", "temperature": 0.7}, "docker": {"enabled": True}}
 
         # Create override config
         override_config = {"llm": {"model": "gpt-3.5-turbo", "max_tokens": 1000}, "new_section": {"new_key": "new_value"}}

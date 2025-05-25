@@ -96,7 +96,7 @@ ahc-agent submit <session_id> --output solution.cpp
 Configuration is managed with the following priority:
 
 1.  Command-line options
-2.  Environment variables (e.g., `AHC_LLM_MODEL="gpt-4-turbo"`)
+2.  Environment variables (e.g., `AHC_LLM_MODEL="o4-mini"`)
 3.  Configuration file (`ahc_config.yaml` in the workspace)
 4.  Default settings
 

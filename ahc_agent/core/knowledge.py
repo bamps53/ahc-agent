@@ -9,15 +9,6 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-# from ahc_agent.core.base import BaseKnowledge
-# from ahc_agent.core.schema import (
-#     AnalysisResult,
-#     DebuggerOutput,
-#     EvolutionLog,
-#     ExperimentData,
-#     ProblemInstance,
-#     SolutionStrategy,
-# )
 from ahc_agent.utils.file_io import ensure_directory, read_file, read_json, write_file, write_json
 
 logger = logging.getLogger(__name__)
@@ -108,7 +99,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Load session metadata
@@ -168,7 +159,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return False
 
         # Save analysis
@@ -199,13 +190,13 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Load analysis
         analysis_path = os.path.join(session_dir, "problem_analysis.json")
         if not os.path.exists(analysis_path):
-            logger.warning(f"Problem analysis for session {session_id} not found")
+            logger.warning(f"Problem analysis {analysis_path} not found")
             return None
 
         try:
@@ -228,7 +219,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return False
 
         # Save strategy
@@ -259,7 +250,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Load strategy
@@ -289,7 +280,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return False
 
         # Create solutions directory for session
@@ -333,7 +324,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Check if solutions directory exists
@@ -367,7 +358,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Check if solutions directory exists
@@ -416,7 +407,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return False
 
         # Save evolution log
@@ -447,7 +438,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Load evolution log
@@ -756,7 +747,7 @@ class KnowledgeBase:
         # Check if session exists
         session_dir = os.path.join(self.sessions_dir, session_id)
         if not os.path.exists(session_dir):
-            logger.warning(f"Session {session_id} not found")
+            logger.warning(f"Session directory {session_dir} not found")
             return []
 
         # Check if solutions directory exists

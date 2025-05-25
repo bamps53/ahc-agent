@@ -165,7 +165,7 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
 
 ### 5.3. ユースケース 3: 設定変更と実験の再開
 
-1.  ユーザーは `ahc-agent config llm.model gpt-4-turbo` や `ahc-agent config evolution.population_size 20` のように設定を変更する。
+1.  ユーザーは `ahc-agent config llm.model o4-mini` や `ahc-agent config evolution.population_size 20` のように設定を変更する。
 2.  ユーザーは `ahc-agent solve --session-id <previous_session_or_new>` で、新しい設定に基づき解探索を再開または新規開始する。
 
 ### 5.4. ユースケース 4: バッチ実験によるパラメータチューニング
@@ -311,7 +311,7 @@ graph TD
     - `--all`: 全セッションのサマリを表示
 - `ahc-agent stop [SESSION_NAME_OR_ID]`
 - `ahc-agent config <KEY> [VALUE]`
-  - 例: `ahc-agent config llm.model gpt-4o`
+  - 例: `ahc-agent config llm.model o4-minio`
   - 例: `ahc-agent config evolution.temperature 0.5`
   - `VALUE`なしで現在の値を表示。ドット記法でネストした値を指定可能。
 - `ahc-agent docker <SUBCOMMAND> [ARGS]` (ワークスペース内での Docker 関連操作)
@@ -364,7 +364,7 @@ graph TD
 # LLM設定
 llm:
   provider: "openai" # 例: "openai", "google", "anthropic"
-  model: "gpt-4o"
+  model: "o4-minio"
   api_key: "${OPENAI_API_KEY}" # 環境変数から読み込むことを推奨
   temperature: 0.2 # 生成時のランダム性 (0.0-1.0)
   max_tokens: 4096 # 1回のレスポンスの最大トークン数
