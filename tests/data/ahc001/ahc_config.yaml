@@ -1,0 +1,3 @@
+contest_id: ahc001
+docker_image: mcr.microsoft.com/devcontainers/rust:1-1-bullseye
+template: default

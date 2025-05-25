@@ -38,26 +38,76 @@ def fetch_problem_statement(url):
     md_content = html2text.html2text(html_content)
 
     filename_suggestion = "problem_statement.md"
+    contest_id_from_url = None
     try:
         parts = url.split("/")
         if len(parts) >= 5 and parts[-2] == "tasks":
-            contest_id = parts[-3]
+            contest_id_from_url = parts[-3]
             task_id_full = parts[-1]
             task_id = task_id_full.split("_")[-1] if "_" in task_id_full else task_id_full
-            filename_suggestion = f"{contest_id}_{task_id}_problem.md"
+            filename_suggestion = f"{contest_id_from_url}_{task_id}_problem.md"
         elif len(parts) >= 4:
-            contest_id = parts[-3]
-            task_id = parts[-1]
-            filename_suggestion = f"{contest_id}_{task_id}_problem.md"
+            # Fallback for URLs not strictly matching /contests/.../tasks/...
+            # This might occur for direct task links or other formats.
+            # Try to infer contest_id if possible, otherwise filename_suggestion remains default.
+            if parts[-2] == "contests":  # e.g. /contests/ahc001
+                contest_id_from_url = parts[-1]
+                filename_suggestion = f"{contest_id_from_url}_problem.md"
+            elif len(parts) >= 3 and parts[-3] == "contests":  # e.g. /contests/ahc001/tasks
+                contest_id_from_url = parts[-2]
+                filename_suggestion = f"{contest_id_from_url}_problem.md"
+            # else: filename_suggestion remains default
+
     except IndexError:
         print(f"Warning: Could not determine contest/task ID from URL for filename: {url}.")
         # Keep default filename_suggestion if pattern doesn't match
 
     visualizer_zip_url = None
-    local_tool_link = soup.find("a", string=re.compile(r"ローカル版|Local version"))
-    if local_tool_link and local_tool_link.has_attr("href"):
-        raw_zip_url = local_tool_link["href"]
-        visualizer_zip_url = urljoin(url, raw_zip_url) if not raw_zip_url.startswith("http") else raw_zip_url
+
+    # 1. Try to find by URL pattern: https://img.atcoder.jp/{contest_id}/*.zip
+    if contest_id_from_url:
+        pattern_base_url = f"https://img.atcoder.jp/{contest_id_from_url}/"
+        zip_links = soup.find_all("a", href=re.compile(rf"^{re.escape(pattern_base_url)}.*\.zip$"))
+
+        if zip_links:
+            if len(zip_links) == 1:
+                visualizer_zip_url = zip_links[0]["href"]
+            else:
+                # Prioritize links with keywords if multiple zip files are found
+                keywords = ["ローカル", "local", "ツール", "tool", "visualizer", "ビジュアライザ"]
+                best_link = None
+                for link in zip_links:
+                    link_text = link.get_text(separator=" ", strip=True).lower()
+                    # Also check parent or surrounding text for context if link text is generic (e.g. "here")
+                    # This is a simple check, could be made more sophisticated
+                    context_text = "".join(link.find_parent().stripped_strings).lower() if link.find_parent() else ""
+
+                    if any(keyword in link_text or keyword in context_text for keyword in keywords):
+                        best_link = link["href"]
+                        break  # Take the first keyword match
+                if best_link:
+                    visualizer_zip_url = best_link
+                else:
+                    # For now, just take the first one found by the pattern.
+                    visualizer_zip_url = zip_links[0]["href"]
+                    print(f"Multiple .zip links for {contest_id_from_url} found. Selected: {visualizer_zip_url}")
+
+    # 2. Fallback to keyword-based search if URL pattern search fails
+    if not visualizer_zip_url:
+        # Try to find the visualizer link with "ここ" (here)
+        visualizer_link_keyword = "ここ"
+        local_tool_link = soup.find("a", string=visualizer_link_keyword)
+
+        # Fallback to "ローカル版" or "Local version" if "ここ" is not found
+        if not local_tool_link:
+            local_tool_link = soup.find("a", string=re.compile(r"ローカル版|Local version"))
+
+        if local_tool_link and local_tool_link.has_attr("href"):
+            raw_zip_url = local_tool_link["href"]
+            # Ensure the URL is absolute
+            visualizer_zip_url = urljoin(url, raw_zip_url) if not raw_zip_url.startswith("http") else raw_zip_url
+
+    if visualizer_zip_url:
         print(f"Found visualizer download link: {visualizer_zip_url}")
     else:
         print("Could not find visualizer download link.")
@@ -118,7 +168,7 @@ def download_and_extract_visualizer(zip_url, target_tools_dir):
                         print(f"Successfully extracted contents of '{single_top_dir}' to {target_tools_dir}/")
                     else:
                         zip_ref.extractall(target_tools_dir)
-                        print(f"Successfully extracted to {target_tools_dir}/ " "(single top item was not a directory)")
+                        print(f"Successfully extracted to {target_tools_dir}/ (single top item was not a directory)")
                     shutil.rmtree(temp_extract_dir)
                 else:
                     zip_ref.extractall(target_tools_dir)
@@ -129,8 +179,7 @@ def download_and_extract_visualizer(zip_url, target_tools_dir):
             else:
                 zip_ref.extractall(target_tools_dir)
                 print(
-                    f"Successfully extracted to {target_tools_dir}/ "
-                    "(no single top-level directory or multiple items at root)"
+                    f"Successfully extracted to {target_tools_dir}/ (no single top-level directory or multiple items at root)"
                 )
 
         os.remove(temp_zip_path)

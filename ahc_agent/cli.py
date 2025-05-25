@@ -280,9 +280,22 @@ async def _solve_problem(config, problem_text, session_id=None, interactive=Fals
         best_solution.get("code") if best_solution else await problem_logic.generate_initial_solution(problem_analysis)
     )
 
-    # Generate test cases
-    click.echo("Generating test cases...")
-    test_cases = await problem_logic.generate_test_cases(problem_analysis, 3)
+    # Generate test cases from tools/in/*.txt
+    click.echo("Loading test cases from tools/in/...")
+    tools_in_dir = Path(config.get("workspace.base_dir")) / "tools" / "in"
+    test_cases = []
+    if tools_in_dir.exists() and tools_in_dir.is_dir():
+        for test_file in sorted(tools_in_dir.glob("*.txt")):
+            with open(test_file) as f:
+                test_cases.append({"name": test_file.name, "input": f.read()})
+
+    if not test_cases:
+        click.echo("No test cases found in tools/in/. Generating fallback test cases...")
+        # Fallback to generating test cases if none are found in tools/in/
+        # Ensure this returns list of dicts with 'input' and 'name'
+        test_cases = await problem_logic.generate_test_cases(problem_analysis, 3)
+    else:
+        click.echo(f"Loaded {len(test_cases)} test cases from tools/in/")
 
     # Create score calculator
     score_calculator = await problem_logic.create_score_calculator(problem_analysis)
@@ -292,15 +305,16 @@ async def _solve_problem(config, problem_text, session_id=None, interactive=Fals
         total_score = 0
         details = {}
 
-        for i, test_case in enumerate(current_test_cases):
+        for test_case in current_test_cases:  # No need for i
             result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
+            test_name = test_case.get("name", f"test_{current_test_cases.index(test_case) + 1}")  # Use name if available
 
             if result["success"]:
                 score = current_score_calculator(test_case["input"], result["execution_output"])
                 total_score += score
-                details[f"test_{i + 1}"] = {"score": score, "execution_time": result["execution_time"]}
+                details[test_name] = {"score": score, "execution_time": result["execution_time"]}
             else:
-                details[f"test_{i + 1}"] = {
+                details[test_name] = {
                     "error": result["compilation_errors"] or result["execution_errors"],
                     "score": 0,
                 }
@@ -576,15 +590,16 @@ async def _interactive_solve(
                     total_score = 0
                     details = {}
 
-                    for i, test_case in enumerate(test_cases):
+                    for test_case in test_cases:
                         result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
+                        test_name = test_case.get("name", f"test_{test_cases.index(test_case) + 1}")  # Use name if available
 
                         if result["success"]:
                             score = score_calculator(test_case["input"], result["execution_output"])
                             total_score += score
-                            details[f"test_{i + 1}"] = {"score": score, "execution_time": result["execution_time"]}
+                            details[test_name] = {"score": score, "execution_time": result["execution_time"]}
                         else:
-                            details[f"test_{i + 1}"] = {
+                            details[test_name] = {
                                 "error": result["compilation_errors"] or result["execution_errors"],
                                 "score": 0,
                             }
