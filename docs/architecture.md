@@ -59,14 +59,18 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
 1.  **`init`**
 
     ```
-    ahc-agent init [OPTIONS]
+    ahc-agent init [OPTIONS] CONTEST_ID
     ```
 
-    - 新しい AHC プロジェクトを指定されたワークスペースに初期化します。
-    - ワークスペースディレクトリと設定ファイル (`ahc_config.yaml`) を作成します。
+    - 指定された `CONTEST_ID` の新しい AHC プロジェクトを初期化します。
+    - プロジェクトディレクトリ（デフォルトでは `CONTEST_ID` 名、`--workspace` で指定可）と、その中に設定ファイル (`ahc_config.yaml`) を作成します。
+    - 設定ファイルには `contest_id`、`template`（デフォルト "default"）、`docker_image`（グローバル設定またはデフォルト "ubuntu:latest"）が記録されます。
+    - 指定された `CONTEST_ID` の問題文のスクレイピングを試みます。
     - オプション:
-      - `--template NAME` (`-t`): 使用するテンプレートを指定します (現在、具体的なテンプレート機能は限定的)。
-      - `--docker-image IMAGE` (`-i`): プロジェクトのデフォルト Docker イメージを設定ファイルに記録します。
+      - `CONTEST_ID`: (必須) AtCoder Heuristic Contest の ID (例: `ahc001`)。
+      - `--workspace PATH` (`-w`): プロジェクトを作成するディレクトリを指定します。指定がない場合はカレントディレクトリに `CONTEST_ID` 名のディレクトリが作成されます。
+      - `--template NAME` (`-t`): 使用するテンプレートを指定します (現在、具体的なテンプレート機能は限定的)。設定ファイルに記録されます。
+      - `--docker-image IMAGE` (`-i`): プロジェクトの Docker イメージを設定ファイルに記録します。
 
 2.  **`solve`**
 

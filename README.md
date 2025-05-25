@@ -28,14 +28,24 @@ pip install ahc-agent
 
 ### 1\. Initialize a Project
 
-Creates a workspace directory and a configuration file (`ahc_config.yaml`).
+Initializes a new AHC project for a specific contest.
+Creates a project directory (named after the `CONTEST_ID` by default, or as specified by `--workspace`)
+and a configuration file (`ahc_config.yaml`) within it.
+This configuration file will store the `contest_id`, the `template` (defaults to "default"),
+and the `docker_image` (uses global config or defaults to "ubuntu:latest" if not specified).
+The command will also attempt to scrape the problem statement for the given `CONTEST_ID`.
 
 ```bash
-ahc-agent init --workspace ./workspace --docker-image my-cpp-dev-env:latest
+ahc-agent init ahc001 --workspace ./my_ahc_project --template custom_cpp --docker-image my-cpp-dev-env:latest
 ```
 
-- `--workspace PATH` (`-w`): Specify the path for the workspace directory.
-- `--docker-image IMAGE` (`-i`): Record the project's default Docker image in the configuration file.
+- `CONTEST_ID`: (Required) The ID of the AtCoder Heuristic Contest (e.g., `ahc001`).
+- `--workspace PATH` (`-w`): Specify the directory to create the project in.
+  If not set, a directory named after the `CONTEST_ID` is created in the current location.
+- `--template NAME` (`-t`): Specify a project template to use. This will be recorded in `ahc_config.yaml`.
+  (Default: "default")
+- `--docker-image IMAGE` (`-i`): Specify the Docker image for the project. This will be recorded in `ahc_config.yaml`.
+  (Default: Value from global config, or "ubuntu:latest")
 
 ### 2\. Solve a Problem
 

@@ -6,9 +6,11 @@ This module provides the main CLI entrypoint for the AHCAgent CLI tool.
 
 # Standard library imports
 import asyncio
+import contextlib
 import json
 import logging
 import os
+from pathlib import Path
 import time
 
 # Third-party imports
@@ -26,6 +28,7 @@ from .core.strategist import SolutionStrategist
 from .utils.docker_manager import DockerManager
 from .utils.llm import LLMClient
 from .utils.logging import setup_logging
+from .utils.scraper import scrape_and_setup_problem
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -34,12 +37,11 @@ logger = logging.getLogger(__name__)
 # Create Click group
 @click.group()
 @click.option("--config", "-c", type=click.Path(exists=True), help="Path to configuration file")
-@click.option("--workspace", "-w", type=click.Path(), help="Path to workspace directory")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--quiet", "-q", is_flag=True, help="Minimize output")
 @click.option("--no-docker", is_flag=True, help="Disable Docker usage")
 @click.pass_context
-def cli(ctx, config, workspace, verbose, quiet, no_docker):
+def cli(ctx, config, verbose, quiet, no_docker):
     """
     AHCAgent CLI - A tool for solving AtCoder Heuristic Contest problems.
     """
@@ -51,9 +53,6 @@ def cli(ctx, config, workspace, verbose, quiet, no_docker):
     cfg = Config(config)
 
     # Override configuration with command-line options
-    if workspace:
-        cfg.set("workspace.base_dir", os.path.abspath(workspace))
-
     if no_docker:
         cfg.set("docker.enabled", False)
 
@@ -66,10 +65,19 @@ def cli(ctx, config, workspace, verbose, quiet, no_docker):
 @cli.command()
 @click.option("--template", "-t", type=str, help="Template to use")
 @click.option("--docker-image", "-i", type=str, help="Docker image to use")
+@click.option(
+    "--workspace",
+    "-w",
+    type=click.Path(),
+    default=None,
+    help=("Directory to create the project in. " "If not set, creates a directory named CONTEST_ID in the current location."),
+)
+@click.argument("contest_id", type=str, required=True)
 @click.pass_context
-def init(ctx, template, docker_image):
+def init(ctx, template, docker_image, workspace, contest_id):
     """
     Initialize a new AHC project.
+    Optionally, provide a CONTEST_ID (e.g., ahc030) to scrape the problem statement.
     """
     config = ctx.obj["config"]
 
@@ -80,19 +88,41 @@ def init(ctx, template, docker_image):
     if docker_image:
         config.set("docker.image", docker_image)
 
-    # Get workspace directory
-    workspace_dir = config.get("workspace.base_dir")
-    workspace_dir = os.path.expanduser(workspace_dir)
+    project_dir = Path(workspace).resolve() if workspace else Path.cwd() / contest_id
 
-    # Create workspace directory
-    os.makedirs(workspace_dir, exist_ok=True)
+    try:
+        project_dir.mkdir(parents=True, exist_ok=True)
+        display_path = project_dir
+        with contextlib.suppress(ValueError):
+            display_path = project_dir.relative_to(Path.cwd())
+        click.echo(f"Initialized AHC project in ./{display_path}")
 
-    # Create config file in workspace
-    config_path = os.path.join(workspace_dir, "ahc_config.yaml")
-    config.save(config_path)
+    except Exception as e:
+        click.echo(f"Error creating project directory '{project_dir}': {e}", err=True)
+        return
 
-    click.echo(f"Initialized AHC project in {workspace_dir}")
-    click.echo(f"Configuration saved to {config_path}")
+    project_specific_config_data = {
+        "contest_id": contest_id,
+        "template": template if template else config.get("template", "default"),
+        "docker_image": docker_image if docker_image else config.get("docker.image", "ubuntu:latest"),
+    }
+
+    project_config_file_path = project_dir / "ahc_config.yaml"
+    try:
+        with open(project_config_file_path, "w") as f:
+            yaml.dump(project_specific_config_data, f, default_flow_style=False)
+        click.echo(f"Project configuration saved to {project_config_file_path}")
+    except Exception as e:
+        click.echo(f"Error saving project configuration to '{project_config_file_path}': {e}", err=True)
+        return
+
+    problem_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
+    click.echo(f"Attempting to scrape problem from {problem_url}...")
+    try:
+        scrape_and_setup_problem(problem_url, str(project_dir))
+        click.echo(f"Problem scraped and set up successfully in '{project_dir}'.")
+    except Exception as e:
+        click.echo(f"Error during scraping: {e}", err=True)
 
 
 @cli.command()
