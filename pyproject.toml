@@ -28,9 +28,11 @@ dependencies = [
     "aiohttp>=3.8.0",
     "tqdm>=4.64.0",
     "colorama>=0.4.4",
+    "bs4>=0.0.2",
+    "html2text>=2024.2.26",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "ruff>=0.4.4",
   "pre-commit<3.7",
