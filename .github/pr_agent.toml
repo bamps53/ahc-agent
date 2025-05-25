@@ -1,0 +1,24 @@
+[config]
+model = "gemini/gemini-2.5-pro-preview-05-06"
+fallback_models = ["gemini/gemini-2.5-pro-preview-05-06"]
+response_language = "ja-JP"
+
+[pr_code_suggestions]
+commitable_code_suggestions = true
+focus_only_on_problems = false
+suggestions_score_threshold = 5
+
+[github_app]
+handle_pr_actions = ['opened', 'reopened', 'ready_for_review']
+pr_commands = ["/describe", "/review", "/improve"]
+handle_push_trigger = true
+push_commands = ["/review --incremental"]
+
+[best_practices]
+num_best_practice_suggestions = 2
+
+[auto_best_practices]
+enable_auto_best_practices = true
+utilize_auto_best_practices = true
+extra_instructions = ""
+max_patterns = 5
