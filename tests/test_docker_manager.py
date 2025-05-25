@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ahc_agent_cli.utils.docker_manager import DockerManager
+from ahc_agent.utils.docker_manager import DockerManager
 
 
 class TestDockerManager:
@@ -42,7 +42,7 @@ class TestDockerManager:
             dm.workspace_dir = temp_workspace  # Ensure workspace_dir is set for tests
             yield dm
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_command_error(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error")
         result = docker_manager.run_command("error_command", temp_workspace)
@@ -50,7 +50,7 @@ class TestDockerManager:
         assert result["stderr"] == "Error"
         mock_subprocess_run.assert_called_once()
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_container_with_input_file(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="test input", stderr="")
 
@@ -90,7 +90,7 @@ class TestDockerManager:
         assert stdout.strip() == input_content
         assert stderr == ""
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_init(self, mock_subprocess_run, docker_manager):
         """
         Test initialization.
@@ -112,7 +112,7 @@ class TestDockerManager:
         assert docker_manager.python_interpreter == "python3"  # Assert instance attribute
         assert docker_manager.python_flags == ""  # Assert instance attribute
 
-    @patch("ahc_agent_cli.utils.docker_manager.DockerManager._check_docker")
+    @patch("ahc_agent.utils.docker_manager.DockerManager._check_docker")
     @patch("docker.from_env")
     def test_init_disabled(self, mock_docker_from_env, mock_check_docker_method):
         """
@@ -125,7 +125,7 @@ class TestDockerManager:
         assert manager.enabled is False
         assert manager.image == "mcr.microsoft.com/devcontainers/rust:1-1-bullseye"
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_pull_image(self, mock_subprocess_run, docker_manager):
         """
         Test pull_image method.
@@ -150,7 +150,7 @@ class TestDockerManager:
             timeout=docker_manager.timeout,  # Use docker_manager.timeout
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_pull_image_error(self, mock_subprocess_run, docker_manager):
         """
         Test pull_image method with error.
@@ -176,7 +176,7 @@ class TestDockerManager:
             timeout=docker_manager.timeout,  # Use docker_manager.timeout
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_command(self, mock_subprocess_run, docker_manager, temp_workspace):
         """
         Test run_command method.
@@ -215,7 +215,7 @@ class TestDockerManager:
             expected_docker_cmd, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_command_with_input(self, mock_subprocess_run, docker_manager, temp_workspace):
         """
         Test run_command method with input (simulated via command string).
@@ -260,7 +260,7 @@ class TestDockerManager:
             expected_docker_cmd, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_cleanup(self, mock_subprocess_run, docker_manager):
         """
         Test cleanup method.
@@ -283,7 +283,7 @@ class TestDockerManager:
             check=False,
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_cleanup_error(self, mock_subprocess_run, docker_manager):
         """
         Test cleanup method with error.
@@ -303,7 +303,7 @@ class TestDockerManager:
         # Check subprocess.run calls
         mock_subprocess_run.assert_called_once_with(["docker", "container", "prune", "-f"], capture_output=True, check=False)
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_compile_cpp(self, mock_subprocess_run, docker_manager):
         """
         Test compile_cpp method.
@@ -337,7 +337,7 @@ class TestDockerManager:
         actual_compile_command_str = called_args_list[-1]
         assert actual_compile_command_str == expected_compile_cmd_str_part
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_cpp(self, mock_subprocess_run, docker_manager):
         """
         Test run_cpp method.
@@ -375,7 +375,7 @@ class TestDockerManager:
         assert actual_run_command_str.startswith("time -p ./test_exec < ")
         assert actual_run_command_str.endswith(" 2>&1")
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_copy_to_container(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         container_id = "test_container_for_copy"
@@ -396,7 +396,7 @@ class TestDockerManager:
             expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_copy_from_container(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         container_id = "test_container_for_copy_from"
@@ -414,7 +414,7 @@ class TestDockerManager:
             expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_build_image_existing_dockerfile(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="Image built successfully", stderr="")
 
@@ -438,7 +438,7 @@ class TestDockerManager:
             timeout=docker_manager.build_timeout,  # Use build_timeout here
         )
 
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_build_image_no_dockerfile_or_context(self, mock_subprocess_run, docker_manager, temp_workspace):
         # Case 1: Context path does not exist
         non_existent_context_path = os.path.join(temp_workspace, "non_existent_dir")
@@ -490,6 +490,6 @@ class TestDockerManager:
         )
 
     @pytest.mark.skip(reason="Not yet implemented")
-    @patch("ahc_agent_cli.utils.docker_manager.subprocess.run")
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_container_with_volume_mapping(self, mock_subprocess_run, docker_manager, temp_workspace):
         pass

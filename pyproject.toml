@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 backend-path = ["."]
 
 [project]
@@ -44,7 +44,7 @@ dev = [
 Homepage = "https://github.com/bamps53/ahc-agent"
 
 [project.scripts]
-ahc-agent = "ahc_agent_cli.cli:main"
+ahc-agent = "ahc_agent.cli:main"
 
 [tool.setuptools]
 include-package-data = true
@@ -53,7 +53,7 @@ include-package-data = true
 where = ["."]
 
 [tool.setuptools.package-data]
-"ahc_agent_cli" = ["templates/*.cpp", "templates/*.md", "config/*.yaml"]
+"ahc_agent" = ["templates/*.cpp", "templates/*.md", "config/*.yaml"]
 
 [tool.ruff]
 # Pythonバージョンを指定
@@ -89,7 +89,7 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["ahc_agent_cli"]
+known-first-party = ["ahc_agent"]
 force-sort-within-sections = true
 
 [tool.ruff.lint.per-file-ignores]

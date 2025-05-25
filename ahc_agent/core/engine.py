@@ -12,8 +12,8 @@ import random
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ahc_agent_cli.utils.file_io import ensure_directory
-from ahc_agent_cli.utils.llm import LLMClient
+from ahc_agent.utils.file_io import ensure_directory
+from ahc_agent.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 

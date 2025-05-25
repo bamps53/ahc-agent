@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
 import pytest
 
-from ahc_agent_cli.cli import cli
+from ahc_agent.cli import cli
 
 
 class TestCLI:
@@ -39,7 +39,7 @@ class TestCLI:
         assert "status" in result.output
         assert "submit" in result.output
 
-    @patch("ahc_agent_cli.cli.Config")
+    @patch("ahc_agent.cli.Config")
     def test_init_command(self, mock_config, runner):
         """
         Test init command.
@@ -64,8 +64,8 @@ class TestCLI:
             mock_config_instance.set.assert_any_call("workspace.base_dir", workspace_path)
             mock_config_instance.save.assert_called_once_with(os.path.join(workspace_path, "ahc_config.yaml"))
 
-    @patch("ahc_agent_cli.cli._solve_problem")
-    @patch("ahc_agent_cli.cli.asyncio.run")
+    @patch("ahc_agent.cli._solve_problem")
+    @patch("ahc_agent.cli.asyncio.run")
     def test_solve_command(self, mock_asyncio_run, mock_solve_problem_coroutine, runner):
         """
         Test solve command.
@@ -110,7 +110,7 @@ class TestCLI:
             # _solve_problem が期待通りに呼び出されたかも確認
             mock_solve_problem_coroutine.assert_called_once()
 
-    @patch("ahc_agent_cli.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.KnowledgeBase")
     def test_status_command(self, mock_knowledge_base, runner):
         """
         Test status command.
@@ -143,7 +143,7 @@ class TestCLI:
         assert "Evolution: Complete (10 generations)" in result.output
         assert "Best Score: 100" in result.output
 
-    @patch("ahc_agent_cli.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.KnowledgeBase")
     def test_submit_command(self, mock_knowledge_base, runner):
         """
         Test submit command.
@@ -168,7 +168,7 @@ class TestCLI:
                 content = f.read()
                 assert content == "// Test code"
 
-    @patch("ahc_agent_cli.cli.Config")
+    @patch("ahc_agent.cli.Config")
     def test_config_get_command(self, mock_config, runner):
         """
         Test config get command.
@@ -188,7 +188,7 @@ class TestCLI:
         # Check Config calls
         mock_config_instance.get.assert_called_with("llm.model")
 
-    @patch("ahc_agent_cli.cli.Config")
+    @patch("ahc_agent.cli.Config")
     def test_config_set_command(self, mock_config, runner):
         """
         Test config set command.
@@ -207,7 +207,7 @@ class TestCLI:
         # Check Config calls
         mock_config_instance.set.assert_called_with("llm.model", "gpt-3.5-turbo")
 
-    @patch("ahc_agent_cli.cli.DockerManager")
+    @patch("ahc_agent.cli.DockerManager")
     def test_docker_status_command(self, mock_docker_manager, runner):
         """
         Test docker status command.

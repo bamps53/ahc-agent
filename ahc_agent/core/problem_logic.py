@@ -10,7 +10,7 @@ import random
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-from ahc_agent_cli.utils.llm import LLMClient
+from ahc_agent.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 

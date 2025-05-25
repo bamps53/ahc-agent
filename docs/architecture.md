@@ -3,7 +3,7 @@
 ## 1. パッケージ構造
 
 ```
-ahc_agent_cli/
+ahc_agent/
 ├── __init__.py            # バージョン情報、パッケージメタデータ
 ├── cli.py                 # CLIコマンド定義 (Clickベース)
 ├── config.py              # 設定管理 (デフォルト設定、YAML/環境変数からの読み込み)
@@ -151,7 +151,7 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
 
 設定は `config.py` 内の `Config` クラスによって管理されます。デフォルト設定、YAML ファイル、環境変数の順でマージされます。
 
-**デフォルト設定の構造 (`ahc_agent_cli/config.py` より):**
+**デフォルト設定の構造 (`ahc_agent/config.py` より):**
 
 ```yaml
 # AHCAgent CLI 設定 (ahc_config.yaml の例)
@@ -221,7 +221,7 @@ batch:
 
 ## 4. Docker 統合
 
-`ahc_agent_cli.utils.docker_manager.DockerManager` クラスが Docker 操作を担当します。
+`ahc_agent.utils.docker_manager.DockerManager` クラスが Docker 操作を担当します。
 
 ### Docker コンテナ管理
 
@@ -373,7 +373,7 @@ experiments:
 
 ## 8. ログ管理
 
-`ahc_agent_cli.utils.logging` モジュールで設定。
+`ahc_agent.utils.logging` モジュールで設定。
 
 ### ログレベル
 

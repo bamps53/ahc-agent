@@ -3,9 +3,9 @@ name: AHCAgent CI
 # CIをトリガーするイベントを指定
 on:
   push:
-    branches: [ main ] # mainブランチへのpush
+    branches: [main] # mainブランチへのpush
   pull_request:
-    branches: [ main ] # mainブランチへのプルリクエスト
+    branches: [main] # mainブランチへのプルリクエスト
 
 jobs:
   lint_and_test:
@@ -19,33 +19,33 @@ jobs:
         python-version: ["3.8", "3.10", "3.12"]
 
     steps:
-    # 1. リポジトリのコードをチェックアウト
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # 1. リポジトリのコードをチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 2. 指定したバージョンのPythonセットアップ
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip' # pipの依存関係をキャッシュ
+      # 2. 指定したバージョンのPythonセットアップ
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip" # pipの依存関係をキャッシュ
 
-    # 3. 依存関係のインストール
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev]" # パッケージ自体と開発用依存関係をインストール
+      # 3. 依存関係のインストール
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" # パッケージ自体と開発用依存関係をインストール
 
-    # 4. Ruffでリンターを実行
-    - name: Lint with Ruff
-      run: |
-        ruff check .
-        ruff format --check .
+      # 4. Ruffでリンターを実行
+      - name: Lint with Ruff
+        run: |
+          ruff check .
+          ruff format --check .
 
-    # 5. Pytestでテストを実行
-    - name: Run Pytest
-      run: |
-        pytest
+      # 5. Pytestでテストを実行
+      - name: Run Pytest
+        run: |
+          pytest
 
   # TODO 費用が掛かるため一旦無効化
   # validate_integration:
@@ -88,11 +88,11 @@ jobs:
   #       # OPENAI_API_KEY: "sk-dummy" # LiteLLMがエラーにならないようにダミーキーを設定
   #     run: |
   #       # validate.sh 内のハードコードされたパスをCI環境に合わせて修正
-  #       # 例: /home/ubuntu/ahc_agent_cli -> GITHUB_WORKSPACE (カレントディレクトリ)
+  #       # 例: /home/ubuntu/ahc_agent -> GITHUB_WORKSPACE (カレントディレクトリ)
   #       #     sample_problem.md のパスも同様に修正
   #       # これらの修正は、validate.sh自体をCIフレンドリーに改修するのが理想的です。
   #       echo "Patching validate.sh for CI environment..."
-  #       sed -i 's|cd /home/ubuntu/ahc_agent_cli|cd ${GITHUB_WORKSPACE}|g' validate.sh
-  #       sed -i 's|/home/ubuntu/ahc_agent_cli/sample_problem.md|${GITHUB_WORKSPACE}/sample_problem.md|g' validate.sh
+  #       sed -i 's|cd /home/ubuntu/ahc_agent|cd ${GITHUB_WORKSPACE}|g' validate.sh
+  #       sed -i 's|/home/ubuntu/ahc_agent/sample_problem.md|${GITHUB_WORKSPACE}/sample_problem.md|g' validate.sh
   #       echo "Running validate.sh..."
   #       ./validate.sh

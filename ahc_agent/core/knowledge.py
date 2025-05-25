@@ -9,8 +9,8 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-# from ahc_agent_cli.core.base import BaseKnowledge
-# from ahc_agent_cli.core.schema import (
+# from ahc_agent.core.base import BaseKnowledge
+# from ahc_agent.core.schema import (
 #     AnalysisResult,
 #     DebuggerOutput,
 #     EvolutionLog,
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 #     ProblemInstance,
 #     SolutionStrategy,
 # )
-from ahc_agent_cli.utils.file_io import ensure_directory, read_file, read_json, write_file, write_json
+from ahc_agent.utils.file_io import ensure_directory, read_file, read_json, write_file, write_json
 
 logger = logging.getLogger(__name__)
 

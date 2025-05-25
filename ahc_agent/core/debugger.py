@@ -10,9 +10,9 @@ import re
 import tempfile
 from typing import Any, Dict, List, Optional
 
-from ahc_agent_cli.utils.docker_manager import DockerManager
-from ahc_agent_cli.utils.file_io import ensure_directory, write_file
-from ahc_agent_cli.utils.llm import LLMClient
+from ahc_agent.utils.docker_manager import DockerManager
+from ahc_agent.utils.file_io import ensure_directory, write_file
+from ahc_agent.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 

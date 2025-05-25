@@ -1,6 +1,6 @@
 import pytest
 
-from ahc_agent_cli.utils.docker_manager import DockerManager
+from ahc_agent.utils.docker_manager import DockerManager
 
 
 @pytest.fixture

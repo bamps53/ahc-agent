@@ -7,7 +7,7 @@ This module provides functionality for analyzing AtCoder Heuristic Contest probl
 import logging
 from typing import Any, Dict, Optional
 
-from ahc_agent_cli.utils.llm import LLMClient
+from ahc_agent.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 

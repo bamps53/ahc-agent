@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from ahc_agent_cli.config import Config
+from ahc_agent.config import Config
 
 
 class TestConfig:

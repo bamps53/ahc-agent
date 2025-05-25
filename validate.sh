@@ -7,7 +7,7 @@ mkdir -p ~/ahc_test_workspace
 
 # Install the package in development mode
 echo "Installing AHCAgent CLI in development mode..."
-cd /home/ubuntu/ahc_agent_cli
+cd /home/ubuntu/ahc_agent
 pip install -e .
 
 # Initialize AHC project
@@ -20,7 +20,7 @@ ahc-agent docker status
 
 # Solve sample problem
 echo "Solving sample problem..."
-ahc-agent solve /home/ubuntu/ahc_agent_cli/sample_problem.md --workspace ~/ahc_test_workspace --time-limit 300
+ahc-agent solve /home/ubuntu/ahc_agent/sample_problem.md --workspace ~/ahc_test_workspace --time-limit 300
 
 # List sessions
 echo "Listing sessions..."

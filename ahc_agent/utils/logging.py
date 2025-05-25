@@ -31,7 +31,7 @@ def setup_logging(
         raise ValueError(f"Invalid log level: {level}")
 
     # Create logger
-    logger = logging.getLogger("ahc_agent_cli")
+    logger = logging.getLogger("ahc_agent")
     logger.setLevel(numeric_level)
 
     # Clear existing handlers
@@ -88,5 +88,5 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         Logger instance
     """
     if name:
-        return logging.getLogger(f"ahc_agent_cli.{name}")
-    return logging.getLogger("ahc_agent_cli")
+        return logging.getLogger(f"ahc_agent.{name}")
+    return logging.getLogger("ahc_agent")

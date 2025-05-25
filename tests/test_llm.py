@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ahc_agent_cli.utils.llm import LLMClient
+from ahc_agent.utils.llm import LLMClient
 
 
 class TestLLMClient:
@@ -23,7 +23,7 @@ class TestLLMClient:
         config = {"provider": "litellm", "model": "gpt-4", "api_key": "test_key", "temperature": 0.7, "max_tokens": 1000}
         return LLMClient(config)
 
-    @patch("ahc_agent_cli.utils.llm.litellm.acompletion")
+    @patch("ahc_agent.utils.llm.litellm.acompletion")
     @pytest.mark.asyncio()
     async def test_generate(self, mock_completion, llm_client):
         """
@@ -49,7 +49,7 @@ class TestLLMClient:
         assert call_args["temperature"] == 0.7
         assert call_args["max_tokens"] == 1000
 
-    @patch("ahc_agent_cli.utils.llm.litellm.acompletion")
+    @patch("ahc_agent.utils.llm.litellm.acompletion")
     @pytest.mark.asyncio()
     async def test_generate_json(self, mock_completion, llm_client):
         """
@@ -74,7 +74,7 @@ class TestLLMClient:
         assert "Test prompt" in call_args["messages"][0]["content"]
         assert "JSON" in call_args["messages"][0]["content"]
 
-    @patch("ahc_agent_cli.utils.llm.litellm.acompletion")
+    @patch("ahc_agent.utils.llm.litellm.acompletion")
     @pytest.mark.asyncio()
     async def test_generate_json_invalid(self, mock_completion, llm_client):
         """
@@ -92,7 +92,7 @@ class TestLLMClient:
         assert "LLM did not return valid JSON" in str(excinfo.value)
         assert "Expecting value: line 1 column 1 (char 0)" in str(excinfo.value)  # Underlying json.JSONDecodeError message
 
-    @patch("ahc_agent_cli.utils.llm.litellm.acompletion")
+    @patch("ahc_agent.utils.llm.litellm.acompletion")
     @pytest.mark.asyncio()
     async def test_generate_with_error(self, mock_completion, llm_client):
         """
@@ -108,7 +108,7 @@ class TestLLMClient:
         # Check error
         assert "Test error" in str(excinfo.value)
 
-    @patch("ahc_agent_cli.utils.llm.litellm.acompletion")
+    @patch("ahc_agent.utils.llm.litellm.acompletion")
     @pytest.mark.asyncio()
     async def test_generate_with_retry(self, mock_completion, llm_client):
         """
@@ -129,7 +129,7 @@ class TestLLMClient:
         # Check call count
         assert mock_completion.call_count == 2
 
-    @patch("ahc_agent_cli.utils.llm.litellm.acompletion")
+    @patch("ahc_agent.utils.llm.litellm.acompletion")
     @pytest.mark.asyncio()
     async def test_generate_with_max_retries(self, mock_completion, llm_client):
         """
