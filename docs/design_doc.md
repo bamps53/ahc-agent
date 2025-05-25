@@ -32,12 +32,12 @@
     7.2. 対話モードの主要なやり取り
     7.3. 出力とログ
 8.  データモデル
-    8.1. 設定ファイル
-    8.2. 問題分析結果
+    8.1. 設定ファイル (`config.yaml`)
+    8.2. 問題分析結果 (JSON)
     8.3. 個体 (Solution Candidate)
     8.4. セッション情報
-    8.5. 典型アルゴリズム/ライブラリデータ
-    8.6. 過去コンペ解法データ
+    8.5. 典型アルゴリズム/ライブラリデータ (例: `library/dijkstra.cpp`, `library/dijkstra.meta.json`)
+    8.6. 過去コンペ解法データ (例: `database/contests.db` - SQLite, または `database/ahc001.json`, `database/ahc002.json` など)
 9.  考慮事項
     9.1. セキュリティ
     9.2. パフォーマンス
@@ -91,7 +91,7 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
 - **ローカル実行・評価**: Docker コンテナ内で C++コードを安全にコンパイル・実行し、ローカルテスター（または提供されるサンプルケース）で評価できる。
 - **実験管理**: 実行した実験のパラメータ、生成されたコード、スコアなどを記録・管理できる。
 - **CLI 操作**: 上記機能を直感的なコマンドラインインターフェースから操作できる。
-  - **プロジェクト初期化 (`init {competition_id}`)**: 指定されたコンペティション ID に基づき、ワークスペース作成、ディレクトリ初期化、Docker 開発環境セットアップ、実験記録ファイル初期化、問題文ダウンロード、テストケース生成ツールダウンロード、テストケース生成、ビジュアライザセットアップ、テスト実行コマンド作成までを自動で行う。
+  - **プロジェクト初期化 (`init {competition_id}`)**: コンテスト ID を指定してプロジェクトを初期化する。ワークスペース作成、問題文・テスト入力例（`tools/in/*.txt` 等）を含む公式ツール群のダウンロード、設定ファイルの生成、（公式ツールに含まれる）テスト入力例の配置などを行う。
   - **問題解決プロセスの実行 (`solve`)**: エージェントがバックグラウンドで解探索を開始。ユーザーは実行中に自然言語で追加の指示やヒントを与えることが可能。
   - **実行状況の確認 (`status`)**: 現在の進捗、実験結果の成否、使用した LLM トークン数や推定料金などを分かりやすく表示。
   - **プロセスの停止 (`stop`)**: 実行中のエージェントを安全に停止。
@@ -116,7 +116,7 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
 
 - 上記「3.1. 機能目標」に記載されたすべての機能。
 - AtCoder Heuristic Contest の問題形式への特化。
-- `init` コマンドによる、コンテスト環境の自動セットアップ機能（問題文、公式ツール類、テストケースの取得と配置）。
+- `init` コマンドによる、コンテスト環境の自動セットアップ機能（問題文、公式ツール類、テスト入力例の取得とセットアップ）。
 - LLM として `LiteLLM` がサポートするモデルへの対応 (初期は OpenAI GPT シリーズや Gemini シリーズを主眼)。
 - 解法コードの主言語として C++をサポート。
 - ローカルファイルシステムへの実験結果の保存。
@@ -145,7 +145,7 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
 1.  ユーザーはコンテストページでコンペティション ID（例: `ahc030`）を確認する。
 2.  ユーザーはターミナルで `ahc-agent init ahc030` を実行する。
     - システムは `./workspace/ahc030/` のようなワークスペースディレクトリを作成する。
-    - システムは公式ページ等から問題文、テストケースジェネレータ、ビジュアライザ等をダウンロードし、ワークスペース内に適切に配置・セットアップする。
+    - システムは公式ページ等から問題文、テスト入力例を含む公式ツール群、ビジュアライザ等をダウンロードし、ワークスペース内に適切に配置・セットアップする。
     - システムは基本的なテスト実行スクリプトやコマンドエイリアスを生成する。
     - システムは Docker 開発環境（Dockerfile、docker-compose.yml など）をセットアップする。
     - システムは実験記録用のファイルを初期化する。
@@ -229,16 +229,16 @@ graph TD
 
 - **CLI (`cli.py`, `__main__.py`)**: ユーザーからのコマンドを受け付け、対応するハンドラを呼び出す。`click` または `Typer` を使用。
 - **Configuration Manager (`config.py`)**: 設定ファイル (YAML) と環境変数から設定を読み込み、アプリケーション全体に提供する。管理対象は LLM API キー・モデル、Docker 設定、進化パラメータ、ハイパーパラメータなど。
-- **Workspace Manager (`workspace_manager.py`)**: `init`コマンドでコンテストごとのワークスペース構造を初期化・管理。`solve`コマンド実行時はセッションごとのサブディレクトリを管理。入力ファイル、生成コード、ログ、実験結果などを整理して保存。
+- **Workspace Manager (`workspace_manager.py`)**: `init`コマンドでコンテストごとのワークスペース構造を初期化・管理。`solve`コマンド実行時はセッション用ディレクトリを管理。入力ファイル、生成コード、ログ、実験結果などを整理して保存。
 - **Command Handler (各コマンドに対応するロジック群)**: 各 CLI コマンドの具体的な処理フローを実行し、コアモジュール群を協調させる。
-  - `InitCommandHandler`: `ContestEnvSetup`を呼び出し、ワークスペース初期化。
-  - `SolveCommandHandler`: `AgentController`を起動し、バックグラウンドで進化プロセスを開始。
-  - `StatusCommandHandler`: `AgentController`や`KnowledgeBase`から情報を取得し表示。
-  - `StopCommandHandler`: `AgentController`に停止シグナルを送信。
-  - `ConfigCommandHandler`: `ConfigurationManager`を介して設定を読み書き。
-  - `LibraryCommandHandler`: `AlgorithmLibraryManager` を介してライブラリ情報を表示・検索。
-  - `DatabaseCommandHandler`: `PastContestDBManager` を介して過去コンペ情報を検索・表示。
-- **Contest Environment Setup (`core/contest_setup.py`)**: `init`コマンドの主要ロジック。指定されたコンペティション ID に基づき、問題文、テストケース生成ツール、ビジュアライザ等を Web から取得 (utils/downloader.py 経由) し、ワークスペースにセットアップ。Docker 環境やテスト用スクリプトも生成。
+  - **`InitCommandHandler`**: `ContestEnvSetup`を呼び出し、ワークスペース初期化。
+  - **`SolveCommandHandler`**: `AgentController`を起動し、バックグラウンドで進化プロセスを開始。
+  - **`StatusCommandHandler`**: `AgentController`や`KnowledgeBase`から情報を取得し表示。
+  - **`StopCommandHandler`**: `AgentController`に停止シグナルを送信。
+  - **`ConfigCommandHandler`**: `ConfigurationManager`を介して設定を読み書き。
+  - **`LibraryCommandHandler`**: `AlgorithmLibraryManager` を介してライブラリ情報を表示・検索。
+  - **`DatabaseCommandHandler`**: `PastContestDBManager` を介して過去コンペ情報を検索・表示。
+- **Contest Environment Setup (`core/contest_setup.py`)**: `init`コマンドの主要ロジック。指定されたコンペティション ID に基づき、問題文、テスト入力例を含む公式ツール群、ビジュアライザ等を Web から取得 (utils/downloader.py 経由) し、ワークスペースにセットアップ。Docker 環境やテスト用スクリプトも生成。
 - **Agent Controller (`core/agent_controller.py`)**: `solve`コマンドで起動されるメインプロセス。`EvolutionaryEngine`の実行を管理し、ユーザーからの自然言語指示（将来的な機能）を解釈してエンジンに伝達。バックグラウンド実行と状態管理。
 - **Problem Analyzer (`core/analyzer.py`)**: LLM を使い問題文から構造化情報を抽出。
 - **Solution Strategist (`core/strategist.py`)**: LLM を使い解法戦略を立案。必要に応じて `AlgorithmLibraryManager` や `PastContestDBManager` から情報を取得し、戦略に反映させる。
@@ -259,7 +259,7 @@ graph TD
 2.  CLI がコマンドを解析し、`InitCommandHandler` を呼び出す。
 3.  `WorkspaceManager` が `./workspace/ahc030/` ディレクトリ構造を作成。
 4.  `ContestEnvSetup` が `ahc030` の情報を基に、`Downloader` を使用して AtCoder の関連ページ等にアクセス。
-5.  問題文(PDF/HTML)、サンプルコード、テストケース生成ツール(zip/tar.gz)、ビジュアライザ(zip/jar)などをダウンロード。
+5.  問題文(PDF/HTML)、テスト入力例を含む公式ツール群（zip/tar.gz）、ビジュアライザ(zip/jar)などをダウンロード。
 6.  ダウンロードしたファイルをワークスペース内の所定の場所 (`problem/`, `tools/tester/`, `tools/visualizer/`など) に展開・配置。
 7.  `DockerManager` を使用して、開発用 Dockerfile や docker-compose.yml を生成。
 8.  テスト実行用のシェルスクリプト (`test.sh`) や Makefile を生成。
@@ -267,7 +267,7 @@ graph TD
 
 #### `solve` コマンド実行時
 
-1.  ユーザーがワークスペース内で `ahc-agent solve` を実行。
+1.  ユーザーはワークスペース内で `ahc-agent solve` を実行。
 2.  CLI がコマンドを解析し、`SolveCommandHandler` を呼び出す。
 3.  `AgentController` が起動し、セッション用ディレクトリを `WorkspaceManager` に準備させる。
 4.  `EvolutionaryEngine` が初期化される。
@@ -636,7 +636,6 @@ JSON ファイルの場合の例 (`database/ahc001.json`):
 - より高度な知識ベースの活用 (過去の類似問題の解法パターンや効果的だったプロンプトの自動推薦など)。
 - 分散実行による大規模実験のサポート (例: Ray, Dask を使った複数マシンでの並列評価)。
 - 結果の可視化ツールの統合 (ローカルビジュアライザとの連携強化、`status`コマンドでの簡易グラフ表示、matplotlib 等を利用したスコア推移グラフ生成)。
-- クラウドストレージ（S3, GCS など）への実験結果やワークスペースのバックアップ・同期オプション。
 - `ahc-agent dashboard` コマンドによる Web ベースの簡易ダッシュボード提供 (Flask/FastAPI + Chart.js など)。
 - ユーザーによる典型アルゴリズムライブラリや過去解法 DB への貢献・拡張機能 (例: GitHub リポジトリ経由でのプルリクエストベースの更新)。
 - より洗練された自然言語によるエージェントへの指示・対話機能。
@@ -652,7 +651,7 @@ JSON ファイルの場合の例 (`database/ahc001.json`):
 - **世代 (Generation)**: 進化計算における一つの区切り。各世代で個体群が評価され、次の世代の個体が生成される。
 - **セッション (Session)**: `solve` コマンド一回の実行に対応する作業単位。設定、ログ、生成された解などが紐づく。
 - **ワークスペース (Workspace)**: 特定のコンペティション (`competition_id`) に関連する全てのファイル（問題文、ツール、セッションデータなど）を格納するディレクトリ。
-- **プロンプトエンジニアリング**: LLM から期待する出力を得るために、入力（プロンプト）を工夫する技術。
+- **プロンプトエンジニアリング**: LLM が生成する出力を最適化するために、入力（プロンプト）を工夫する技術。
 - **トークン (Token)**: LLM がテキストを処理する際の基本単位。API 利用料金はトークン数に基づいて計算されることが多い。
 
 ## 12. テスト計画
@@ -688,3 +687,5 @@ JSON ファイルの場合の例 (`database/ahc001.json`):
 - **ユーザビリティテスト**: (手動テストが中心となるが、CLI 出力の一貫性などは一部自動チェック可能)
   - 対象: CLI のコマンド体系、オプションの分かりやすさ、エラーメッセージの明確さ、ログの有用性、ドキュメントの正確性。
   - 目的: ユーザーが直感的に、かつ効率的にツールを操作できることを確認する。開発チーム内でのドッグフーディングや、ベータテスターからのフィードバックを重視。
+
+```
