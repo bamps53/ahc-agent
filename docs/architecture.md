@@ -75,10 +75,11 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
 2.  **`solve`**
 
     ```
-    ahc-agent solve [OPTIONS] PROBLEM_FILE
+    ahc-agent solve [OPTIONS] WORKSPACE
     ```
 
-    - 指定された問題記述ファイル (`PROBLEM_FILE`) に基づいて問題を解きます。
+    - 指定されたワークスペースディレクトリ (`WORKSPACE`) 内の問題記述と設定に基づいて問題を解きます。
+    - **ワークスペースディレクトリには `problem.md`（問題記述ファイル）と `ahc_config.yaml`（設定ファイル）が含まれている必要があります。**
     - 問題分析、戦略立案、解の進化、評価のプロセスを実行します。
     - オプション:
       - `--session-id ID` (`-s`): 既存のセッション ID を指定して処理を再開します。

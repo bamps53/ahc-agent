@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from ahc_agent.cli import cli
+from ahc_agent.config import Config
 
 
 class TestCLI:
@@ -381,6 +382,95 @@ class TestCLI:
             or f"Initialized AHC project in {project_dir}" in result.output
         )
         assert f"Project configuration saved to {config_file}" in result.output
+
+    @patch("ahc_agent.cli._solve_problem")
+    @patch("ahc_agent.cli.Config")
+    def test_solve_command_with_workspace(self, MockConfig, mock_solve_problem_async, runner, tmp_path):
+        """Test the solve command with a workspace argument."""
+        contest_id = "ahc999"
+        workspace_dir = tmp_path / contest_id
+        workspace_dir.mkdir()
+
+        problem_text_content = "This is a dummy problem statement."
+        problem_file = workspace_dir / "problem.md"
+        problem_file.write_text(problem_text_content)
+
+        config_file_content = {
+            "contest_id": contest_id,
+            "template": "test_template",
+            "docker": {"image": "test_image:latest"},
+            "evolution": {"time_limit_seconds": 10},
+            "workspace": {"base_dir": str(workspace_dir)},
+        }
+        config_file = workspace_dir / "ahc_config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_file_content, f)
+
+        mock_config_instance_loaded = MagicMock(spec=Config)
+        mock_config_instance_loaded.config_file_path = str(config_file)
+
+        def mock_get_side_effect(key, default=None):
+            if key == "llm":
+                return {}
+            if key == "docker":
+                return {}
+            if key == "workspace.base_dir":
+                return str(workspace_dir)
+            if key == "analyzer":
+                return {}
+            if key == "strategist":
+                return {}
+            if key == "evolution":
+                return {}
+            if key == "debugger":
+                return {}
+            if key == "problem_logic":
+                return {}
+            parts = key.split(".")
+            val = config_file_content
+            try:
+                for part in parts:
+                    val = val[part]
+                return val
+            except KeyError:
+                return default
+
+        mock_config_instance_loaded.get.side_effect = mock_get_side_effect
+
+        MockConfig.side_effect = [MagicMock(spec=Config), mock_config_instance_loaded]
+
+        mock_solve_problem_async.return_value = asyncio.Future()
+
+        result = runner.invoke(cli, ["solve", str(workspace_dir)])
+
+        print(f"Test solve command output: {result.output}")
+        print(f"Test solve command exception: {result.exception}")
+        if result.exit_code != 0:
+            import traceback
+
+            traceback.print_exception(result.exc_info[0], result.exc_info[1], result.exc_info[2])
+
+        assert result.exit_code == 0, f"CLI exited with code {result.exit_code} and error {result.exception}"
+
+        assert MockConfig.call_count >= 1
+
+        mock_solve_problem_async.assert_called_once()
+        called_args, called_kwargs = mock_solve_problem_async.call_args
+
+        # 呼び出し引数の検証
+        assert called_args[0] == mock_config_instance_loaded  # Config オブジェクト
+        assert called_args[1] == problem_text_content  # 問題文のテキスト
+        assert called_args[2] == str(problem_file)  # problem.md のパス
+        assert called_args[3] is None  # session_id (このテストではデフォルトのNone)
+        assert called_args[4] is False  # interactive (このテストではデフォルトのFalse)
+        assert called_kwargs == {}  # キーワード引数は渡されないはず
+
+        assert f"Solving problem in workspace: {workspace_dir}" in result.output
+        assert f"Using config: {config_file}" in result.output
+
+    def test_init_command_with_existing_target_dir_as_file(self, runner, tmp_path, mock_config, mock_scraper):
+        # ... (rest of the code remains the same)
+        pass
 
 
 # To run these tests, navigate to the project root directory and run:
