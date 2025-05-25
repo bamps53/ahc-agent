@@ -365,9 +365,15 @@ class TestCLI:
         workspace_dir = tmp_path / contest_id
         workspace_dir.mkdir()
 
-        problem_text_content = "This is a dummy problem statement."
+        # Load problem statement from tests/data/ahc001/problem.md
+        # Assuming test_cli.py is in the tests directory
+        sample_problem_path = Path(__file__).parent / "data" / "ahc001" / "problem.md"
+        with open(sample_problem_path, encoding="utf-8") as f:
+            problem_text_content_from_file = f.read()
+
         problem_file = workspace_dir / "problem.md"
-        problem_file.write_text(problem_text_content)
+        with open(problem_file, "w", encoding="utf-8") as f:
+            f.write(problem_text_content_from_file)
 
         config_file_content = {
             "contest_id": contest_id,
@@ -425,7 +431,7 @@ class TestCLI:
 
         # 呼び出し引数の検証
         assert called_args[0] == mock_config_instance_loaded  # Config オブジェクト
-        assert called_args[1] == problem_text_content  # 問題文のテキスト
+        assert called_args[1] == problem_text_content_from_file  # 問題文のテキスト
         assert called_args[2] is None  # session_id は渡されていないはず
         assert called_args[3] is False  # interactive (このテストではデフォルトのFalse)
         assert called_kwargs == {}  # キーワード引数は渡されないはず
@@ -499,10 +505,15 @@ class TestCLI:
         with open(test_input_file2, "w") as f:
             f.write(test_input_content2)
 
-        problem_text_content = "This is a sample problem text."
+        # Load problem statement from tests/data/ahc001/problem.md
+        # Assuming test_cli.py is in the tests directory
+        sample_problem_path = Path(__file__).parent / "data" / "ahc001" / "problem.md"
+        with open(sample_problem_path, encoding="utf-8") as f:
+            problem_text_content_from_file = f.read()
+
         problem_file = workspace_dir / "problem.md"
-        with open(problem_file, "w") as f:
-            f.write(problem_text_content)
+        with open(problem_file, "w", encoding="utf-8") as f:
+            f.write(problem_text_content_from_file)
 
         # 2. Config のモック設定
         mock_config_instance = MagicMock(spec=Config)
@@ -585,7 +596,7 @@ class TestCLI:
 
         # _solve_problem コルーチンを直接呼び出してテストする
         asyncio.run(
-            _solve_problem(mock_config_instance, problem_text_content)  # session_id を削除
+            _solve_problem(mock_config_instance, problem_text_content_from_file)  # session_id を削除
         )
 
         assert captured_evaluate_func is not None
