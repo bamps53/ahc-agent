@@ -5,6 +5,7 @@
 **ステータス:** 完成
 
 ## 目次
+
 1.  はじめに
     1.1. プロジェクトの目的
     1.2. 背景
@@ -17,11 +18,11 @@
     4.1. 対象とする機能 (In Scope)
     4.2. 対象としない機能 (Out of Scope)
 5.  主要機能とユースケース
-    5.1. ユースケース1: 新しいAHCコンテストへの参加準備と初期解探索
-    5.2. ユースケース2: エージェントの進捗確認と停止
-    5.3. ユースケース3: 設定変更と実験の再開
-    5.4. ユースケース4: バッチ実験によるパラメータチューニング
-    5.5. ユースケース5: 典型アルゴリズムの利用と過去解法の参照
+    5.1. ユースケース 1: 新しい AHC コンテストへの参加準備と初期解探索
+    5.2. ユースケース 2: エージェントの進捗確認と停止
+    5.3. ユースケース 3: 設定変更と実験の再開
+    5.4. ユースケース 4: バッチ実験によるパラメータチューニング
+    5.5. ユースケース 5: 典型アルゴリズムの利用と過去解法の参照
 6.  アーキテクチャ
     6.1. 全体構成図
     6.2. 主要コンポーネント詳細
@@ -49,118 +50,132 @@
     12.2. テストの種類と対象
 
 ---
+
 ## 1. はじめに
 
 ### 1.1. プロジェクトの目的
-AtCoder Heuristic Contest (AHC) の問題解決プロセスを自動化・支援するためのスタンドアロンCLIツールを提供する。LLMを活用した高度な問題分析、戦略立案、DeepMindのAlphaEvolveにインスパイアされた進化的アルゴリズムによる解探索、C++コード生成・実行・デバッグまでを一貫してサポートする。さらに、典型アルゴリズムの提供や過去コンペの解法データベースを活用することで、競技プログラマーの生産性向上と効率的な解法探索に貢献する。
+
+AtCoder Heuristic Contest (AHC) の問題解決プロセスを自動化・支援するためのスタンドアロン CLI ツールを提供する。LLM を活用した高度な問題分析、戦略立案、DeepMind の AlphaEvolve にインスパイアされた進化的アルゴリズムによる解探索、C++コード生成・実行・デバッグまでを一貫してサポートする。さらに、典型アルゴリズムの提供や過去コンペの解法データベースを活用することで、競技プログラマーの生産性向上と効率的な解法探索に貢献する。
 
 ### 1.2. 背景
-AHCのようなヒューリスティック型コンテストでは、問題の特性把握、多様な解法の試行、パラメータ調整といった多岐にわたる作業が求められ、多くの時間と労力を要する。特に、LLMの能力を最大限に活用しつつ、ローカル環境で完結し、かつ再現性の高い開発・実験サイクルを効率的に回すためのツールが不足している。AlphaEvolveのようなアプローチは、LLMをコーディングエージェントとして活用し、アルゴリズム設計自体を進化させる可能性を示しており、本ツールはこの思想をAHCの文脈で実現することを目指す。また、過去の知見や汎用的なアルゴリズム部品の再利用を促進することで、車輪の再発明を防ぎ、より高度な戦略に注力できる環境を提供する。
+
+AHC のようなヒューリスティック型コンテストでは、問題の特性把握、多様な解法の試行、パラメータ調整といった多岐にわたる作業が求められ、多くの時間と労力を要する。特に、LLM の能力を最大限に活用しつつ、ローカル環境で完結し、かつ再現性の高い開発・実験サイクルを効率的に回すためのツールが不足している。AlphaEvolve のようなアプローチは、LLM をコーディングエージェントとして活用し、アルゴリズム設計自体を進化させる可能性を示しており、本ツールはこの思想を AHC の文脈で実現することを目指す。また、過去の知見や汎用的なアルゴリズム部品の再利用を促進することで、車輪の再発明を防ぎ、より高度な戦略に注力できる環境を提供する。
 
 ### 1.3. 解決する課題
-* AHC問題解決における定型的な作業（問題分析、コードの雛形作成、コンパイル・実行、簡単な実験管理など）の自動化。
-* LLMを用いた問題分析・戦略提案による、解法アプローチの多様化と質の向上。
-* AlphaEvolveに着想を得た、LLMによるコード生成・変異・交叉を伴う進化的アルゴリズムによる解探索プロセスの自動化と効率化。
-* Dockerを用いた再現可能かつ分離された実行環境の提供。
-* ローカル環境での開発・実験サイクルの高速化。
-* コンテスト開始時の環境構築の自動化（問題文、テストケース、ビジュアライザ等の取得とセットアップ）。
-* 典型的なアルゴリズムやデータ構造のライブラリへの容易なアクセスと利用。
-* 過去のコンテスト問題とそれに対する有望な解法アプローチのデータベース化と検索・参照。
+
+- AHC 問題解決における定型的な作業（問題分析、コードの雛形作成、コンパイル・実行、簡単な実験管理など）の自動化。
+- LLM を用いた問題分析・戦略提案による、解法アプローチの多様化と質の向上。
+- AlphaEvolve に着想を得た、LLM によるコード生成・変異・交叉を伴う進化的アルゴリズムによる解探索プロセスの自動化と効率化。
+- Docker を用いた再現可能かつ分離された実行環境の提供。
+- ローカル環境での開発・実験サイクルの高速化。
+- コンテスト開始時の環境構築の自動化（問題文、テストケース、ビジュアライザ等の取得とセットアップ）。
+- 典型的なアルゴリズムやデータ構造のライブラリへの容易なアクセスと利用。
+- 過去のコンテスト問題とそれに対する有望な解法アプローチのデータベース化と検索・参照。
 
 ## 2. 対象読者
 
 このドキュメントは、以下の関係者を対象としています。
-* 開発者
-* プロジェクト貢献者
-* (将来的に) `AHCAgent CLI` のパワーユーザー
+
+- 開発者
+- プロジェクト貢献者
+- (将来的に) `AHCAgent CLI` のパワーユーザー
 
 ## 3. プロダクトの目標
 
 ### 3.1. 機能目標
-* **問題分析**: LLMを使用してAHCの問題文を解析し、制約、入出力形式、スコアリングルールなどを構造化して抽出できる。
-* **戦略提案**: 分析結果に基づき、LLMが複数の解法戦略やアルゴリズムのアイデアを提案できる。必要に応じて、内蔵の典型アルゴリズムライブラリや過去の解法データベースを参照し、提案に含めることができる。
-* **コード生成**: 選択された戦略に基づき、C++の基本的な実装コード（テンプレート利用）を生成できる。典型アルゴリズムライブラリのコード片を組み込むことも可能とする。
-* **進化的解探索 (AlphaEvolve風)**: 生成されたコードをベースに、LLMを主要なオペレータ (変異、交叉、新規生成など) として活用するAlphaEvolveに類似した進化的アルゴリズムを実行し、解を改善できる。これには、LLMによるコードの理解、改善提案、バグ修正の試みも含む。
-* **ローカル実行・評価**: Dockerコンテナ内でC++コードを安全にコンパイル・実行し、ローカルテスター（または提供されるサンプルケース）で評価できる。
-* **実験管理**: 実行した実験のパラメータ、生成されたコード、スコアなどを記録・管理できる。
-* **CLI操作**: 上記機能を直感的なコマンドラインインターフェースから操作できる。
-    * **プロジェクト初期化 (`init {competition_id}`)**: 指定されたコンペティションIDに基づき、ワークスペース作成、ディレクトリ初期化、Docker開発環境セットアップ、実験記録ファイル初期化、問題文ダウンロード、テストケース生成ツールダウンロード、テストケース生成、ビジュアライザセットアップ、テスト実行コマンド作成までを自動で行う。
-    * **問題解決プロセスの実行 (`solve`)**: エージェントがバックグラウンドで解探索を開始。ユーザーは実行中に自然言語で追加の指示やヒントを与えることが可能。
-    * **実行状況の確認 (`status`)**: 現在の進捗、実験結果の成否、使用したLLMトークン数や推定料金などを分かりやすく表示。
-    * **プロセスの停止 (`stop`)**: 実行中のエージェントを安全に停止。
-    * **設定管理 (`config`)**: LLM関連設定（モデル、APIキー等）、進化計算のハイパーパラメータなどを設定・確認。
-    * **ライブラリ/DB操作 (`library`, `database`)**: 典型アルゴリズムライブラリの参照や、過去コンペ解法DBの検索を行うコマンド。
-* **対話モード**: ユーザーがステップごとに確認・介入しながら問題解決プロセスを進められる。
-* **バッチ処理モード**: 複数の問題や設定で自動的に実験を実行できる。
-* **典型アルゴリズム・ライブラリ**: 頻出するアルゴリズム（焼きなまし法、ビームサーチ、ダイクストラ法など）やデータ構造（Union-Find木など）のC++実装を提供し、エージェントが容易に利用できるようにする。
-* **過去コンペ解法データベース**: 過去のAHC問題の概要、特徴、上位解法で用いられたアプローチやアルゴリズムの情報をデータベース化し、キーワードや問題特性で検索・参照できるようにする。
+
+- **問題分析**: LLM を使用して AHC の問題文を解析し、制約、入出力形式、スコアリングルールなどを構造化して抽出できる。
+- **戦略提案**: 分析結果に基づき、LLM が複数の解法戦略やアルゴリズムのアイデアを提案できる。必要に応じて、内蔵の典型アルゴリズムライブラリや過去の解法データベースを参照し、提案に含めることができる。
+- **コード生成**: 選択された戦略に基づき、C++の基本的な実装コード（テンプレート利用）を生成できる。典型アルゴリズムライブラリのコード片を組み込むことも可能とする。
+- **進化的解探索 (AlphaEvolve 風)**: 生成されたコードをベースに、LLM を主要なオペレータ (変異、交叉、新規生成など) として活用する AlphaEvolve に類似した進化的アルゴリズムを実行し、解を改善できる。これには、LLM によるコードの理解、改善提案、バグ修正の試みも含む。
+- **ローカル実行・評価**: Docker コンテナ内で C++コードを安全にコンパイル・実行し、ローカルテスター（または提供されるサンプルケース）で評価できる。
+- **実験管理**: 実行した実験のパラメータ、生成されたコード、スコアなどを記録・管理できる。
+- **CLI 操作**: 上記機能を直感的なコマンドラインインターフェースから操作できる。
+  - **プロジェクト初期化 (`init {competition_id}`)**: 指定されたコンペティション ID に基づき、ワークスペース作成、ディレクトリ初期化、Docker 開発環境セットアップ、実験記録ファイル初期化、問題文ダウンロード、テストケース生成ツールダウンロード、テストケース生成、ビジュアライザセットアップ、テスト実行コマンド作成までを自動で行う。
+  - **問題解決プロセスの実行 (`solve`)**: エージェントがバックグラウンドで解探索を開始。ユーザーは実行中に自然言語で追加の指示やヒントを与えることが可能。
+  - **実行状況の確認 (`status`)**: 現在の進捗、実験結果の成否、使用した LLM トークン数や推定料金などを分かりやすく表示。
+  - **プロセスの停止 (`stop`)**: 実行中のエージェントを安全に停止。
+  - **設定管理 (`config`)**: LLM 関連設定（モデル、API キー等）、進化計算のハイパーパラメータなどを設定・確認。
+  - **ライブラリ/DB 操作 (`library`, `database`)**: 典型アルゴリズムライブラリの参照や、過去コンペ解法 DB の検索を行うコマンド。
+- **対話モード**: ユーザーがステップごとに確認・介入しながら問題解決プロセスを進められる。
+- **バッチ処理モード**: 複数の問題や設定で自動的に実験を実行できる。
+- **典型アルゴリズム・ライブラリ**: 頻出するアルゴリズム（焼きなまし法、ビームサーチ、ダイクストラ法など）やデータ構造（Union-Find 木など）の C++実装を提供し、エージェントが容易に利用できるようにする。
+- **過去コンペ解法データベース**: 過去の AHC 問題の概要、特徴、上位解法で用いられたアプローチやアルゴリズムの情報をデータベース化し、キーワードや問題特性で検索・参照できるようにする。
 
 ### 3.2. 非機能目標
-* **ユーザビリティ**: CLIのコマンドやオプションは直感的で理解しやすいものにする。
-* **パフォーマンス**: 問題分析やコード生成、小規模な実験実行は妥当な時間内に完了する。
-* **拡張性**: 新しいLLMモデルやアルゴリズム、プログラミング言語（将来的には）への対応を考慮した設計にする。典型アルゴリズムライブラリや解法DBへの追加・更新も容易であること。
-* **再現性**: Dockerコンテナの利用により、異なる環境でも実験結果の再現性を担保する。
-* **保守性**: モジュール化されたクリーンなコードベースを維持する。
+
+- **ユーザビリティ**: CLI のコマンドやオプションは直感的で理解しやすいものにする。
+- **パフォーマンス**: 問題分析やコード生成、小規模な実験実行は妥当な時間内に完了する。
+- **拡張性**: 新しい LLM モデルやアルゴリズム、プログラミング言語（将来的には）への対応を考慮した設計にする。典型アルゴリズムライブラリや解法 DB への追加・更新も容易であること。
+- **再現性**: Docker コンテナの利用により、異なる環境でも実験結果の再現性を担保する。
+- **保守性**: モジュール化されたクリーンなコードベースを維持する。
 
 ## 4. スコープ (対象範囲)
 
 ### 4.1. 対象とする機能 (In Scope)
-* 上記「3.1. 機能目標」に記載されたすべての機能。
-* AtCoder Heuristic Contest の問題形式への特化。
-* `init` コマンドによる、コンテスト環境の自動セットアップ機能（問題文、公式ツール類、テストケースの取得と配置）。
-* LLMとして `LiteLLM` がサポートするモデルへの対応 (初期はOpenAI GPTシリーズやGeminiシリーズを主眼)。
-* 解法コードの主言語としてC++をサポート。
-* ローカルファイルシステムへの実験結果の保存。
-* AlphaEvolveの主要なアイデア（LLMによるコード進化、多様性維持のためのプロンプトエンジニアリングなど）の導入。
-* 基本的な典型アルゴリズム・データ構造のC++ライブラリの提供と、それらをエージェントが参照・利用する仕組み。
-* 過去のAHC問題のメタデータと解法パターンの小規模なデータベースの構築と、CLIからの簡易的な検索・参照機能。
+
+- 上記「3.1. 機能目標」に記載されたすべての機能。
+- AtCoder Heuristic Contest の問題形式への特化。
+- `init` コマンドによる、コンテスト環境の自動セットアップ機能（問題文、公式ツール類、テストケースの取得と配置）。
+- LLM として `LiteLLM` がサポートするモデルへの対応 (初期は OpenAI GPT シリーズや Gemini シリーズを主眼)。
+- 解法コードの主言語として C++をサポート。
+- ローカルファイルシステムへの実験結果の保存。
+- AlphaEvolve の主要なアイデア（LLM によるコード進化、多様性維持のためのプロンプトエンジニアリングなど）の導入。
+- 基本的な典型アルゴリズム・データ構造の C++ライブラリの提供と、それらをエージェントが参照・利用する仕組み。
+- 過去の AHC 問題のメタデータと解法パターンの小規模なデータベースの構築と、CLI からの簡易的な検索・参照機能。
 
 ### 4.2. 対象としない機能 (Out of Scope)
-* GUIインターフェースの提供。
-* クラウドベースの大規模分散実行環境の構築・管理。
-* 複数ユーザーによる同時利用・共有機能。
-* AHC以外のコンテスト形式への汎用的な対応。
-* 複雑な数式処理や高度な数学的解析機能の組み込み。
-* `submit` コマンドによる自動提出機能（生成されたファイル群をワークスペースに整理して配置するまでとする）。
-* LLMのファインチューニング機能。
-* AlphaEvolve論文で言及されているような発見的アルゴリズムの完全な自動設計（初期段階では、より具体的なヒューリスティック問題解決の文脈でのコード改善に注力）。
-* `init` コマンドにおける、非公式なツールや複雑な依存関係を持つツールの自動セットアップ。
-* 網羅的なアルゴリズムライブラリの構築（初期は主要なものに限定）。
-* 過去解法DBの自動更新やユーザー投稿機能（初期は手動でのデータ整備を想定）。
+
+- GUI インターフェースの提供。
+- クラウドベースの大規模分散実行環境の構築・管理。
+- 複数ユーザーによる同時利用・共有機能。
+- AHC 以外のコンテスト形式への汎用的な対応。
+- 複雑な数式処理や高度な数学的解析機能の組み込み。
+- `submit` コマンドによる自動提出機能（生成されたファイル群をワークスペースに整理して配置するまでとする）。
+- LLM のファインチューニング機能。
+- AlphaEvolve 論文で言及されているような発見的アルゴリズムの完全な自動設計（初期段階では、より具体的なヒューリスティック問題解決の文脈でのコード改善に注力）。
+- `init` コマンドにおける、非公式なツールや複雑な依存関係を持つツールの自動セットアップ。
+- 網羅的なアルゴリズムライブラリの構築（初期は主要なものに限定）。
+- 過去解法 DB の自動更新やユーザー投稿機能（初期は手動でのデータ整備を想定）。
 
 ## 5. 主要機能とユースケース
 
-### 5.1. ユースケース1: 新しいAHCコンテストへの参加準備と初期解探索
-1.  ユーザーはコンテストページでコンペティションID（例: `ahc030`）を確認する。
+### 5.1. ユースケース 1: 新しい AHC コンテストへの参加準備と初期解探索
+
+1.  ユーザーはコンテストページでコンペティション ID（例: `ahc030`）を確認する。
 2.  ユーザーはターミナルで `ahc-agent init ahc030` を実行する。
-    * システムは `~/ahc_workspace/ahc030/` のようなワークスペースディレクトリを作成する。
-    * システムは公式ページ等から問題文、テストケースジェネレータ、ビジュアライザ等をダウンロードし、ワークスペース内に適切に配置・セットアップする。
-    * システムは基本的なテスト実行スクリプトやコマンドエイリアスを生成する。
-    * システムはDocker開発環境（Dockerfile、docker-compose.ymlなど）をセットアップする。
-    * システムは実験記録用のファイルを初期化する。
-3.  ユーザーは `cd ~/ahc_workspace/ahc030` でワークスペースに移動する。
-4.  ユーザーはダウンロードされた問題文を確認し、必要であれば `ahc-agent config` でLLMのモデルや進化計算のパラメータを調整する。
+    - システムは `./workspace/ahc030/` のようなワークスペースディレクトリを作成する。
+    - システムは公式ページ等から問題文、テストケースジェネレータ、ビジュアライザ等をダウンロードし、ワークスペース内に適切に配置・セットアップする。
+    - システムは基本的なテスト実行スクリプトやコマンドエイリアスを生成する。
+    - システムは Docker 開発環境（Dockerfile、docker-compose.yml など）をセットアップする。
+    - システムは実験記録用のファイルを初期化する。
+3.  ユーザーは `cd ./workspace/ahc030` でワークスペースに移動する。
+4.  ユーザーはダウンロードされた問題文を確認し、必要であれば `ahc-agent config` で LLM のモデルや進化計算のパラメータを調整する。
 5.  ユーザーは `ahc-agent solve` を実行する。
-    * エージェントはバックグラウンドで問題分析、戦略立案、初期コード生成、そしてAlphaEvolve風の進化プロセスを開始する。
-    * ユーザーは別のターミナルから `ahc-agent status` で進捗を確認したり、必要に応じて `ahc-agent solve --interactive` （または実行中のプロセスへの指示送信機能）で「もう少し探索的なアプローチを試して」といった自然言語での指示を追加する。
+    - エージェントはバックグラウンドで問題分析、戦略立案、初期コード生成、そして AlphaEvolve 風の進化プロセスを開始する。
+    - ユーザーは別のターミナルから `ahc-agent status` で進捗を確認したり、必要に応じて `ahc-agent solve --interactive` （または実行中のプロセスへの指示送信機能）で「もう少し探索的なアプローチを試して」といった自然言語での指示を追加する。
 
-### 5.2. ユースケース2: エージェントの進捗確認と停止
+### 5.2. ユースケース 2: エージェントの進捗確認と停止
+
 1.  ユーザーは `ahc-agent status` を実行する。
-    * システムは現在の世代、ベストスコア、実行中のタスク、試行したアプローチの概要、使用トークン数、推定料金などを整形して表示する。
-    * （将来的には）簡易的なテキストベースのダッシュボードや、HTMLレポートの生成も考えられる。
+    - システムは現在の世代、ベストスコア、実行中のタスク、試行したアプローチの概要、使用トークン数、推定料金などを整形して表示する。
+    - （将来的には）簡易的なテキストベースのダッシュボードや、HTML レポートの生成も考えられる。
 2.  ユーザーは期待する成果が得られた、あるいは時間切れが近いなどの理由で `ahc-agent stop` を実行する。
-    * システムは実行中の進化プロセスを安全に中断し、現在の状態を保存する。
+    - システムは実行中の進化プロセスを安全に中断し、現在の状態を保存する。
 
-### 5.3. ユースケース3: 設定変更と実験の再開
+### 5.3. ユースケース 3: 設定変更と実験の再開
+
 1.  ユーザーは `ahc-agent config llm.model gpt-4-turbo` や `ahc-agent config evolution.population_size 20` のように設定を変更する。
 2.  ユーザーは `ahc-agent solve --session-id <previous_session_or_new>` で、新しい設定に基づき解探索を再開または新規開始する。
 
-### 5.4. ユースケース4: バッチ実験によるパラメータチューニング
-1.  ユーザーはバッチ設定ファイルに、試したいLLMモデルのリスト、`population_size` の範囲などを記述する。
+### 5.4. ユースケース 4: バッチ実験によるパラメータチューニング
+
+1.  ユーザーはバッチ設定ファイルに、試したい LLM モデルのリスト、`population_size` の範囲などを記述する。
 2.  ユーザーは `ahc-agent batch <batch_config_file>` を実行する。
 3.  システムは定義された組み合わせで複数の `solve` プロセスを（可能なら並列で）実行し、各実験の結果を体系的に保存する。
 
-### 5.5. ユースケース5: 典型アルゴリズムの利用と過去解法の参照
+### 5.5. ユースケース 5: 典型アルゴリズムの利用と過去解法の参照
+
 1.  ユーザーは `ahc-agent solve` を実行中に、エージェントが特定のアルゴリズム（例: 焼きなまし法）の適用を検討していることを `status` や対話モードで知る。
 2.  ユーザーは `ahc-agent library show simulated_annealing` (仮コマンド) で、内蔵されている焼きなまし法のテンプレートや説明を確認する。
 3.  エージェントは、戦略立案やコード生成の際に、このライブラリの焼きなまし法の実装を参考にしたり、直接利用したりする。
@@ -170,6 +185,7 @@ AHCのようなヒューリスティック型コンテストでは、問題の�
 ## 6. アーキテクチャ
 
 ### 6.1. 全体構成図
+
 ```mermaid
 graph TD
     CLI("CLI Interface (cli.py)") --> ConfigManager("Configuration Manager (config.py)")
@@ -210,134 +226,144 @@ graph TD
 ```
 
 ### 6.2. 主要コンポーネント詳細
-* **CLI (`cli.py`, `__main__.py`)**: ユーザーからのコマンドを受け付け、対応するハンドラを呼び出す。`click` または `Typer` を使用。
-* **Configuration Manager (`config.py`)**: 設定ファイル (YAML) と環境変数から設定を読み込み、アプリケーション全体に提供する。管理対象はLLM APIキー・モデル、Docker設定、進化パラメータ、ハイパーパラメータなど。
-* **Workspace Manager (`workspace_manager.py`)**: `init`コマンドでコンテストごとのワークスペース構造を初期化・管理。`solve`コマンド実行時はセッションごとのサブディレクトリを管理。入力ファイル、生成コード、ログ、実験結果などを整理して保存。
-* **Command Handler (各コマンドに対応するロジック群)**: 各CLIコマンドの具体的な処理フローを実行し、コアモジュール群を協調させる。
-    * `InitCommandHandler`: `ContestEnvSetup`を呼び出し、ワークスペース初期化。
-    * `SolveCommandHandler`: `AgentController`を起動し、バックグラウンドで進化プロセスを開始。
-    * `StatusCommandHandler`: `AgentController`や`KnowledgeBase`から情報を取得し表示。
-    * `StopCommandHandler`: `AgentController`に停止シグナルを送信。
-    * `ConfigCommandHandler`: `ConfigurationManager`を介して設定を読み書き。
-    * `LibraryCommandHandler`: `AlgorithmLibraryManager` を介してライブラリ情報を表示・検索。
-    * `DatabaseCommandHandler`: `PastContestDBManager` を介して過去コンペ情報を検索・表示。
-* **Contest Environment Setup (`core/contest_setup.py`)**: `init`コマンドの主要ロジック。指定されたコンペティションIDに基づき、問題文、テストケース生成ツール、ビジュアライザ等をWebから取得 (utils/downloader.py経由) し、ワークスペースにセットアップ。Docker環境やテスト用スクリプトも生成。
-* **Agent Controller (`core/agent_controller.py`)**: `solve`コマンドで起動されるメインプロセス。`EvolutionaryEngine`の実行を管理し、ユーザーからの自然言語指示（将来的な機能）を解釈してエンジンに伝達。バックグラウンド実行と状態管理。
-* **Problem Analyzer (`core/analyzer.py`)**: LLMを使い問題文から構造化情報を抽出。
-* **Solution Strategist (`core/strategist.py`)**: LLMを使い解法戦略を立案。必要に応じて `AlgorithmLibraryManager` や `PastContestDBManager` から情報を取得し、戦略に反映させる。
-* **Evolutionary Engine (`core/engine.py`)**: AlphaEvolveの思想に基づき、LLMを主要な進化オペレータとして活用し、解（C++コード）を探索・改善する。コード生成・変異の際に `AlgorithmLibraryManager` のコード片を参照・利用することがある。
-* **Implementation Debugger (`core/debugger.py`)**: C++コードの生成支援、コンパイル、実行、デバッグ支援。LLMにエラーメッセージを提示し、修正案を生成させることも含む。
-* **Knowledge Base (`core/knowledge.py`)**: 実験結果、生成された有望なコード片、効果的だったプロンプト、LLMの使用状況（トークン数、コスト）などをファイルシステムに保存・検索。
-* **LLM Client (`utils/llm.py`)**: `LiteLLM` を介してLLM APIとの通信を抽象化。トークン数カウント機能も持つ。
-* **Docker Manager (`utils/docker_manager.py`)**: Dockerコンテナのライフサイクル管理、コード実行環境の提供。
-* **Algorithm Library Manager (`core/library_manager.py`)**: 典型アルゴリズム・データ構造のC++実装ライブラリを管理。コード片の提供、メタデータ（説明、使い方、計算量など）の管理を行う。ファイルシステム上の特定のディレクトリに格納されたコードファイルとメタデータファイルを読み込む。
-* **Past Contest DB Manager (`core/database_manager.py`)**: 過去のAHC問題のメタデータ、特徴、解法アプローチなどを格納したデータベース（JSONファイル群またはSQLite）を管理。検索インターフェースを提供する。
-* **Downloader (`utils/downloader.py`)**: Webページからファイル（問題文、ツール類）をダウンロードするユーティリティ。必要に応じてスクレイピング機能も持つ。
+
+- **CLI (`cli.py`, `__main__.py`)**: ユーザーからのコマンドを受け付け、対応するハンドラを呼び出す。`click` または `Typer` を使用。
+- **Configuration Manager (`config.py`)**: 設定ファイル (YAML) と環境変数から設定を読み込み、アプリケーション全体に提供する。管理対象は LLM API キー・モデル、Docker 設定、進化パラメータ、ハイパーパラメータなど。
+- **Workspace Manager (`workspace_manager.py`)**: `init`コマンドでコンテストごとのワークスペース構造を初期化・管理。`solve`コマンド実行時はセッションごとのサブディレクトリを管理。入力ファイル、生成コード、ログ、実験結果などを整理して保存。
+- **Command Handler (各コマンドに対応するロジック群)**: 各 CLI コマンドの具体的な処理フローを実行し、コアモジュール群を協調させる。
+  - `InitCommandHandler`: `ContestEnvSetup`を呼び出し、ワークスペース初期化。
+  - `SolveCommandHandler`: `AgentController`を起動し、バックグラウンドで進化プロセスを開始。
+  - `StatusCommandHandler`: `AgentController`や`KnowledgeBase`から情報を取得し表示。
+  - `StopCommandHandler`: `AgentController`に停止シグナルを送信。
+  - `ConfigCommandHandler`: `ConfigurationManager`を介して設定を読み書き。
+  - `LibraryCommandHandler`: `AlgorithmLibraryManager` を介してライブラリ情報を表示・検索。
+  - `DatabaseCommandHandler`: `PastContestDBManager` を介して過去コンペ情報を検索・表示。
+- **Contest Environment Setup (`core/contest_setup.py`)**: `init`コマンドの主要ロジック。指定されたコンペティション ID に基づき、問題文、テストケース生成ツール、ビジュアライザ等を Web から取得 (utils/downloader.py 経由) し、ワークスペースにセットアップ。Docker 環境やテスト用スクリプトも生成。
+- **Agent Controller (`core/agent_controller.py`)**: `solve`コマンドで起動されるメインプロセス。`EvolutionaryEngine`の実行を管理し、ユーザーからの自然言語指示（将来的な機能）を解釈してエンジンに伝達。バックグラウンド実行と状態管理。
+- **Problem Analyzer (`core/analyzer.py`)**: LLM を使い問題文から構造化情報を抽出。
+- **Solution Strategist (`core/strategist.py`)**: LLM を使い解法戦略を立案。必要に応じて `AlgorithmLibraryManager` や `PastContestDBManager` から情報を取得し、戦略に反映させる。
+- **Evolutionary Engine (`core/engine.py`)**: AlphaEvolve の思想に基づき、LLM を主要な進化オペレータとして活用し、解（C++コード）を探索・改善する。コード生成・変異の際に `AlgorithmLibraryManager` のコード片を参照・利用することがある。
+- **Implementation Debugger (`core/debugger.py`)**: C++コードの生成支援、コンパイル、実行、デバッグ支援。LLM にエラーメッセージを提示し、修正案を生成させることも含む。
+- **Knowledge Base (`core/knowledge.py`)**: 実験結果、生成された有望なコード片、効果的だったプロンプト、LLM の使用状況（トークン数、コスト）などをファイルシステムに保存・検索。
+- **LLM Client (`utils/llm.py`)**: `LiteLLM` を介して LLM API との通信を抽象化。トークン数カウント機能も持つ。
+- **Docker Manager (`utils/docker_manager.py`)**: Docker コンテナのライフサイクル管理、コード実行環境の提供。
+- **Algorithm Library Manager (`core/library_manager.py`)**: 典型アルゴリズム・データ構造の C++実装ライブラリを管理。コード片の提供、メタデータ（説明、使い方、計算量など）の管理を行う。ファイルシステム上の特定のディレクトリに格納されたコードファイルとメタデータファイルを読み込む。
+- **Past Contest DB Manager (`core/database_manager.py`)**: 過去の AHC 問題のメタデータ、特徴、解法アプローチなどを格納したデータベース（JSON ファイル群または SQLite）を管理。検索インターフェースを提供する。
+- **Downloader (`utils/downloader.py`)**: Web ページからファイル（問題文、ツール類）をダウンロードするユーティリティ。必要に応じてスクレイピング機能も持つ。
 
 ### 6.3. データフロー
+
 #### `init {competition_id}` コマンド実行時
+
 1.  ユーザーが `ahc-agent init ahc030` を実行。
-2.  CLIがコマンドを解析し、`InitCommandHandler` を呼び出す。
-3.  `WorkspaceManager` が `~/ahc_workspace/ahc030/` ディレクトリ構造を作成。
-4.  `ContestEnvSetup` が `ahc030` の情報を基に、`Downloader` を使用してAtCoderの関連ページ等にアクセス。
+2.  CLI がコマンドを解析し、`InitCommandHandler` を呼び出す。
+3.  `WorkspaceManager` が `./workspace/ahc030/` ディレクトリ構造を作成。
+4.  `ContestEnvSetup` が `ahc030` の情報を基に、`Downloader` を使用して AtCoder の関連ページ等にアクセス。
 5.  問題文(PDF/HTML)、サンプルコード、テストケース生成ツール(zip/tar.gz)、ビジュアライザ(zip/jar)などをダウンロード。
 6.  ダウンロードしたファイルをワークスペース内の所定の場所 (`problem/`, `tools/tester/`, `tools/visualizer/`など) に展開・配置。
-7.  `DockerManager` を使用して、開発用Dockerfileやdocker-compose.ymlを生成。
-8.  テスト実行用のシェルスクリプト (`test.sh`) やMakefileを生成。
+7.  `DockerManager` を使用して、開発用 Dockerfile や docker-compose.yml を生成。
+8.  テスト実行用のシェルスクリプト (`test.sh`) や Makefile を生成。
 9.  実験記録用のファイル (`experiments.log` や `results.csv` のヘッダなど) を`KnowledgeBase`経由で初期化。
 
 #### `solve` コマンド実行時
+
 1.  ユーザーがワークスペース内で `ahc-agent solve` を実行。
-2.  CLIがコマンドを解析し、`SolveCommandHandler` を呼び出す。
+2.  CLI がコマンドを解析し、`SolveCommandHandler` を呼び出す。
 3.  `AgentController` が起動し、セッション用ディレクトリを `WorkspaceManager` に準備させる。
 4.  `EvolutionaryEngine` が初期化される。
-5.  `EvolutionaryEngine` は `ProblemAnalyzer` を使用して問題ファイルを読み込み、LLMで分析、構造化データを生成。
-6.  `EvolutionaryEngine` は `SolutionStrategist` を使用して分析結果に基づき、LLMで戦略を提案（この際、`AlgorithmLibraryManager`や`PastContestDBManager`を参照することがある）。
+5.  `EvolutionaryEngine` は `ProblemAnalyzer` を使用して問題ファイルを読み込み、LLM で分析、構造化データを生成。
+6.  `EvolutionaryEngine` は `SolutionStrategist` を使用して分析結果に基づき、LLM で戦略を提案（この際、`AlgorithmLibraryManager`や`PastContestDBManager`を参照することがある）。
 7.  (対話モードの場合、ユーザーが戦略を選択・調整)
-8.  `EvolutionaryEngine` が初期個体群（コード）を生成 (必要なら `ImplementationDebugger` 経由でLLM支援、`AlgorithmLibraryManager`参照あり)。
-9.  AlphaEvolve風ループ開始:
-    a.  `EvolutionaryEngine` が個体を評価 ( `ImplementationDebugger` を使用し、 `DockerManager` 経由でコードを実行)。スコアは `KnowledgeBase` に記録。
-    b.  `EvolutionaryEngine` がLLMを活用して選択、交叉、変異操作を行い、新世代を生成。
-    c.  `KnowledgeBase` に進捗やLLM利用状況を記録。
+8.  `EvolutionaryEngine` が初期個体群（コード）を生成 (必要なら `ImplementationDebugger` 経由で LLM 支援、`AlgorithmLibraryManager`参照あり)。
+9.  AlphaEvolve 風ループ開始:
+    a. `EvolutionaryEngine` が個体を評価 ( `ImplementationDebugger` を使用し、 `DockerManager` 経由でコードを実行)。スコアは `KnowledgeBase` に記録。
+    b. `EvolutionaryEngine` が LLM を活用して選択、交叉、変異操作を行い、新世代を生成。
+    c. `KnowledgeBase` に進捗や LLM 利用状況を記録。
 10. 終了条件を満たしたら、`AgentController` が最良解を `WorkspaceManager` を通じて所定の場所に保存。
 
 #### `library show <algorithm_name>` コマンド実行時
+
 1.  ユーザーが `ahc-agent library show dijkstra` を実行。
-2.  CLIがコマンドを解析し、`LibraryCommandHandler` を呼び出す。
+2.  CLI がコマンドを解析し、`LibraryCommandHandler` を呼び出す。
 3.  `LibraryCommandHandler` が `AlgorithmLibraryManager` に `dijkstra` の情報を要求。
 4.  `AlgorithmLibraryManager` がファイルシステム上のライブラリファイル群から `dijkstra` のコード片とメタデータを取得。
-5.  取得した情報を整形し、CLIを通じてユーザーに表示。
+5.  取得した情報を整形し、CLI を通じてユーザーに表示。
 
 ## 7. UI/UX (CLI)
 
 ### 7.1. コマンド体系
-* `ahc-agent init <COMPETITION_ID>`
-    * 例: `ahc-agent init ahc030`
-    * オプション:
-        * `--workspace-root PATH`: ワークスペースのルートディレクトリ (デフォルト: `~/ahc_workspace`)
-* `ahc-agent solve [OPTIONS]` (カレントディレクトリが初期化済みワークスペースであることを想定)
-    * オプション:
-        * `--session-name NAME`: セッション名 (デフォルトは日時ベースのユニークな名前)
-        * `--time-limit SECONDS`: 解探索の総時間制限 (デフォルト: 1800秒)
-        * `--max-generations NUM`: 進化の最大世代数 (デフォルト: 30)
-        * `--population-size NUM`: 各世代の個体群サイズ (デフォルト: 10)
-        * `--interactive`: 対話モードで起動 (ユーザー指示を受け付ける)
-        * `--problem-file FILE_PATH`: 問題文ファイルのパス (デフォルトはワークスペース内の `problem/problem.md` など)
-* `ahc-agent status [SESSION_NAME_OR_ID] [OPTIONS]`
-    * オプション:
-        * `--watch`: 継続的にステータスを更新表示 (デフォルトは1回表示)
-        * `--all`: 全セッションのサマリを表示
-* `ahc-agent stop [SESSION_NAME_OR_ID]`
-* `ahc-agent config <KEY> [VALUE]`
-    * 例: `ahc-agent config llm.model gpt-4o`
-    * 例: `ahc-agent config evolution.temperature 0.5`
-    * `VALUE`なしで現在の値を表示。ドット記法でネストした値を指定可能。
-* `ahc-agent docker <SUBCOMMAND> [ARGS]` (ワークスペース内でのDocker関連操作)
-    * `build`: ワークスペース内のDockerfileを使用して開発用Dockerイメージをビルド。
-    * `run`: ビルド済みのDockerコンテナを起動し、インタラクティブシェルに入る。
-    * `cleanup`: このワークスペースに関連する不要なコンテナやイメージを削除。
-* `ahc-agent library <SUBCOMMAND> [ARGS]`
-    * `list`: 利用可能なアルゴリズム/ライブラリの一覧を表示。
-    * `show <NAME>`: 指定したアルゴリズム/ライブラリの詳細（説明、コード例、計算量など）を表示。
-    * `search <KEYWORD>`: キーワードでアルゴリズム/ライブラリを検索。
-* `ahc-agent database <SUBCOMMAND> [ARGS]`
-    * `search --problem "Problem Name Fragment" --tag "tag_name" --algorithm "algo_name"`: 条件に合う過去コンペ情報を検索。
-    * `show <CONTEST_ID>`: 指定したコンペの詳細情報を表示。
+
+- `ahc-agent init <COMPETITION_ID>`
+  - 例: `ahc-agent init ahc030`
+  - オプション:
+    - `--workspace-root PATH`: ワークスペースのルートディレクトリ (デフォルト: `./workspace`)
+- `ahc-agent solve [OPTIONS]` (カレントディレクトリが初期化済みワークスペースであることを想定)
+  - オプション:
+    - `--session-name NAME`: セッション名 (デフォルトは日時ベースのユニークな名前)
+    - `--time-limit SECONDS`: 解探索の総時間制限 (デフォルト: 1800 秒)
+    - `--max-generations NUM`: 進化の最大世代数 (デフォルト: 30)
+    - `--population-size NUM`: 各世代の個体群サイズ (デフォルト: 10)
+    - `--interactive`: 対話モードで起動 (ユーザー指示を受け付ける)
+    - `--problem-file FILE_PATH`: 問題文ファイルのパス (デフォルトはワークスペース内の `problem/problem.md` など)
+- `ahc-agent status [SESSION_NAME_OR_ID] [OPTIONS]`
+  - オプション:
+    - `--watch`: 継続的にステータスを更新表示 (デフォルトは 1 回表示)
+    - `--all`: 全セッションのサマリを表示
+- `ahc-agent stop [SESSION_NAME_OR_ID]`
+- `ahc-agent config <KEY> [VALUE]`
+  - 例: `ahc-agent config llm.model gpt-4o`
+  - 例: `ahc-agent config evolution.temperature 0.5`
+  - `VALUE`なしで現在の値を表示。ドット記法でネストした値を指定可能。
+- `ahc-agent docker <SUBCOMMAND> [ARGS]` (ワークスペース内での Docker 関連操作)
+  - `build`: ワークスペース内の Dockerfile を使用して開発用 Docker イメージをビルド。
+  - `run`: ビルド済みの Docker コンテナを起動し、インタラクティブシェルに入る。
+  - `cleanup`: このワークスペースに関連する不要なコンテナやイメージを削除。
+- `ahc-agent library <SUBCOMMAND> [ARGS]`
+  - `list`: 利用可能なアルゴリズム/ライブラリの一覧を表示。
+  - `show <NAME>`: 指定したアルゴリズム/ライブラリの詳細（説明、コード例、計算量など）を表示。
+  - `search <KEYWORD>`: キーワードでアルゴリズム/ライブラリを検索。
+- `ahc-agent database <SUBCOMMAND> [ARGS]`
+  - `search --problem "Problem Name Fragment" --tag "tag_name" --algorithm "algo_name"`: 条件に合う過去コンペ情報を検索。
+  - `show <CONTEST_ID>`: 指定したコンペの詳細情報を表示。
 
 ### 7.2. 対話モードの主要なやり取り (`ahc-agent solve --interactive`)
+
 1.  問題分析結果の表示と確認プロンプト。
-2.  戦略提案の表示とユーザーによる選択・調整プロンプト。エージェントがライブラリやDBを参照した場合、その情報も提示。
+2.  戦略提案の表示とユーザーによる選択・調整プロンプト。エージェントがライブラリや DB を参照した場合、その情報も提示。
 3.  初期コード生成の確認プロンプト。
-4.  進化プロセス中の定期的な進捗表示 (世代、ベストスコア、LLMによる改善提案の概要)。
+4.  進化プロセス中の定期的な進捗表示 (世代、ベストスコア、LLM による改善提案の概要)。
 5.  ユーザープロンプト (`> `) が表示され、自然言語で指示入力可能。
-    * 例: `> もっと山登り法に近い改善を試してみて`
-    * 例: `> 現在のベスト解の弱点はどこだと思う？`
-    * 例: `> パラメータXを0.1から0.9の範囲で試して`
-    * 例: `> 焼きなまし法の冷却スケジュールを指数関数的に変更して`
-    * 例: `> 過去のahc015で使われたビームサーチのアイデアを参考にできないか？`
+    - 例: `> もっと山登り法に近い改善を試してみて`
+    - 例: `> 現在のベスト解の弱点はどこだと思う？`
+    - 例: `> パラメータXを0.1から0.9の範囲で試して`
+    - 例: `> 焼きなまし法の冷却スケジュールを指数関数的に変更して`
+    - 例: `> 過去のahc015で使われたビームサーチのアイデアを参考にできないか？`
 
 ### 7.3. 出力とログ
-* **標準出力**: 主要な情報、進捗、ユーザーへのプロンプト (対話モード時)。`status` コマンドの結果。`library`, `database` コマンドの結果。
-* **標準エラー出力**: エラーメッセージ、警告。
-* **ログファイル**:
-    * セッションログ: `workspace/<COMPETITION_ID>/<SESSION_NAME>/logs/session.log` (DEBUGレベル以上の詳細な実行記録、LLMとの全プロンプト・レスポンス、各オペレーションの所要時間など)
-    * 実験結果サマリ (CSV形式): `workspace/<COMPETITION_ID>/results.csv` (セッション名, 開始/終了日時, ベストスコア, 最終世代, 使用主要パラメータ, 総LLMトークン数, 推定LLMコストなどを追記)
-* **成果物 (ワークスペース内)**:
-    * 問題ファイル: `workspace/<COMPETITION_ID>/problem/` (例: `problem.md`, `input_format.txt`)
-    * 公式ツール類: `workspace/<COMPETITION_ID>/tools/tester/`, `workspace/<COMPETITION_ID>/tools/visualizer/`
-    * 生成されたC++ファイル群: `workspace/<COMPETITION_ID>/<SESSION_NAME>/solutions/gen<世代番号>_id<個体ID>_score<スコア>.cpp`
-    * 各テストケースの標準出力: `workspace/<COMPETITION_ID>/<SESSION_NAME>/outputs/gen<世代番号>_id<個体ID>/<testcase_name>.out`
-    * 各テストケースのスコアファイル: `workspace/<COMPETITION_ID>/<SESSION_NAME>/scores/gen<世代番号>_id<個体ID>/<testcase_name>.score` (テスターが出力する場合)
-    * セッションごとの最終ベスト解: `workspace/<COMPETITION_ID>/<SESSION_NAME>/best_solution.cpp` (シンボリックリンクまたはコピー)
+
+- **標準出力**: 主要な情報、進捗、ユーザーへのプロンプト (対話モード時)。`status` コマンドの結果。`library`, `database` コマンドの結果。
+- **標準エラー出力**: エラーメッセージ、警告。
+- **ログファイル**:
+  - セッションログ: `workspace/<COMPETITION_ID>/<SESSION_NAME>/logs/session.log` (DEBUG レベル以上の詳細な実行記録、LLM との全プロンプト・レスポンス、各オペレーションの所要時間など)
+  - 実験結果サマリ (CSV 形式): `workspace/<COMPETITION_ID>/results.csv` (セッション名, 開始/終了日時, ベストスコア, 最終世代, 使用主要パラメータ, 総 LLM トークン数, 推定 LLM コストなどを追記)
+- **成果物 (ワークスペース内)**:
+  - 問題ファイル: `workspace/<COMPETITION_ID>/problem/` (例: `problem.md`, `input_format.txt`)
+  - 公式ツール類: `workspace/<COMPETITION_ID>/tools/tester/`, `workspace/<COMPETITION_ID>/tools/visualizer/`
+  - 生成された C++ファイル群: `workspace/<COMPETITION_ID>/<SESSION_NAME>/solutions/gen<世代番号>_id<個体ID>_score<スコア>.cpp`
+  - 各テストケースの標準出力: `workspace/<COMPETITION_ID>/<SESSION_NAME>/outputs/gen<世代番号>_id<個体ID>/<testcase_name>.out`
+  - 各テストケースのスコアファイル: `workspace/<COMPETITION_ID>/<SESSION_NAME>/scores/gen<世代番号>_id<個体ID>/<testcase_name>.score` (テスターが出力する場合)
+  - セッションごとの最終ベスト解: `workspace/<COMPETITION_ID>/<SESSION_NAME>/best_solution.cpp` (シンボリックリンクまたはコピー)
 
 ## 8. データモデル
 
 ### 8.1. 設定ファイル (`config.yaml`)
+
 グローバル設定 (`~/.ahc_agent/config.yaml`) とワークスペース設定 (`workspace/<COMPETITION_ID>/ahc_config.yaml`) があり、後者が優先される。
+
 ```yaml
 # LLM設定
 llm:
-  provider: "openai"  # 例: "openai", "google", "anthropic"
+  provider: "openai" # 例: "openai", "google", "anthropic"
   model: "gpt-4o"
   api_key: "${OPENAI_API_KEY}" # 環境変数から読み込むことを推奨
   temperature: 0.2 # 生成時のランダム性 (0.0-1.0)
@@ -367,7 +393,7 @@ evolution:
 
 # ワークスペース設定
 workspace:
-  base_dir: "~/ahc_workspace" # 全てのコンペティションワークスペースの親ディレクトリ
+  base_dir: "./workspace" # 全てのコンペティションワークスペースの親ディレクトリ
   keep_session_files: true # trueの場合、セッション終了後も生成ファイル群を保持
   max_log_size_mb: 100 # セッションログファイルの最大サイズ
 
@@ -381,7 +407,9 @@ past_contest_db:
 ```
 
 ### 8.2. 問題分析結果 (JSON)
+
 `ProblemAnalyzer` が生成し、`EvolutionaryEngine` や `SolutionStrategist` が利用する。
+
 ```json
 {
   "title": "Problem Title from AHC030",
@@ -391,31 +419,57 @@ past_contest_db:
   "constraints": {
     "N": { "min": 1, "max": 100, "type": "integer", "description": "点の数" },
     "M": { "min": 1, "max": 1000, "type": "integer", "description": "辺の数" },
-    "K": { "min": 0, "max": "N", "type": "integer", "description": "選択する点の最大数"}
+    "K": {
+      "min": 0,
+      "max": "N",
+      "type": "integer",
+      "description": "選択する点の最大数"
+    }
   },
   "input_format_description": "1行目にNとM。\n2行目からM行に渡り、辺の情報 u_i, v_i, w_i...",
   "input_variables": [
-    {"name": "N", "type": "int"},
-    {"name": "M", "type": "int"},
-    {"name": "edges", "type": "array_of_objects", "count": "M", "object_schema": {"u": "int", "v": "int", "w": "int"}}
+    { "name": "N", "type": "int" },
+    { "name": "M", "type": "int" },
+    {
+      "name": "edges",
+      "type": "array_of_objects",
+      "count": "M",
+      "object_schema": { "u": "int", "v": "int", "w": "int" }
+    }
   ],
   "output_format_description": "1行目に選択した点の数K。\n2行目からK行に渡り、選択した点のインデックス...",
   "output_variables": [
-    {"name": "K_selected", "type": "int"},
-    {"name": "selected_indices", "type": "array_of_int", "count": "K_selected"}
+    { "name": "K_selected", "type": "int" },
+    {
+      "name": "selected_indices",
+      "type": "array_of_int",
+      "count": "K_selected"
+    }
   ],
   "scoring_rules": {
     "description": "スコアは高いほど良い。無効な出力の場合は0点。相対スコアの場合はその旨も記載。",
     "formula_example": "Score = (sum_of_selected_values - penalty_for_invalid_constraints) * 10^6 / MAX_POSSIBLE_SCORE"
   },
-  "problem_type_tags": ["optimization", "graph_theory", "combinatorial_search", "geometry"],
-  "extracted_keywords": ["グリッド", "最短経路", "クラスタリング", "割り当て問題"],
+  "problem_type_tags": [
+    "optimization",
+    "graph_theory",
+    "combinatorial_search",
+    "geometry"
+  ],
+  "extracted_keywords": [
+    "グリッド",
+    "最短経路",
+    "クラスタリング",
+    "割り当て問題"
+  ],
   "raw_problem_text_path": "workspace/ahc030/problem/problem.md"
 }
 ```
 
 ### 8.3. 個体 (Solution Candidate)
+
 `EvolutionaryEngine` が管理する各解候補。
+
 ```json
 {
   "id": "gen03_ind07_timestamp",
@@ -442,7 +496,9 @@ past_contest_db:
 ```
 
 ### 8.4. セッション情報
+
 `AgentController` が管理し、`KnowledgeBase` に記録される。
+
 ```json
 {
   "session_id": "session_xyz_timestamp",
@@ -451,12 +507,12 @@ past_contest_db:
   "end_time": "2025-05-23T12:00:00Z",
   "status": "completed",
   "problem_file_path": "workspace/ahc030/problem/problem.md",
-  "configuration_snapshot": { },
+  "configuration_snapshot": {},
   "current_generation": 30,
   "best_score_history": [
-    {"generation": 0, "score": 5000, "individual_id": "gen00_ind01"},
-    {"generation": 5, "score": 8000, "individual_id": "gen05_ind03"},
-    {"generation": 25, "score": 12672.5, "individual_id": "gen25_ind07"}
+    { "generation": 0, "score": 5000, "individual_id": "gen00_ind01" },
+    { "generation": 5, "score": 8000, "individual_id": "gen05_ind03" },
+    { "generation": 25, "score": 12672.5, "individual_id": "gen25_ind07" }
   ],
   "final_best_individual_id": "gen25_ind07",
   "total_llm_tokens_used": {
@@ -464,39 +520,43 @@ past_contest_db:
     "completion_tokens": 500000,
     "total_tokens": 2000000
   },
-  "estimated_llm_cost_usd": 3.50,
+  "estimated_llm_cost_usd": 3.5,
   "error_message": null
 }
 ```
 
 ### 8.5. 典型アルゴリズム/ライブラリデータ (例: `library/dijkstra.cpp`, `library/dijkstra.meta.json`)
-* **`dijkstra.cpp`**: ダイクストラ法のC++実装コード。ヘッダガードやnamespaceで適切に分離。
-* **`dijkstra.meta.json`**:
-    ```json
-    {
-      "name": "Dijkstra's Algorithm",
-      "filename": "dijkstra.cpp",
-      "description": "Finds the shortest paths from a single source vertex to all other vertices in a non-negatively weighted graph.",
-      "usage_example": "Graph g(N); /* ... build graph ... */ vector<long long> dist = dijkstra(g, start_node);",
-      "function_signatures": [
-        "std::vector<long long> dijkstra(const Graph& graph, int start_node)"
-      ],
-      "template_parameters": ["typename CostType = long long"],
-      "time_complexity": "O(E log V) or O(V^2) depending on implementation (typically E log V with priority queue)",
-      "space_complexity": "O(V + E)",
-      "tags": ["graph", "shortest_path", "weighted_graph"],
-      "dependencies": ["vector", "priority_queue", "<utility> for pair"],
-      "notes": "Edge weights must be non-negative."
-    }
-    ```
+
+- **`dijkstra.cpp`**: ダイクストラ法の C++実装コード。ヘッダガードや namespace で適切に分離。
+- **`dijkstra.meta.json`**:
+  ```json
+  {
+    "name": "Dijkstra's Algorithm",
+    "filename": "dijkstra.cpp",
+    "description": "Finds the shortest paths from a single source vertex to all other vertices in a non-negatively weighted graph.",
+    "usage_example": "Graph g(N); /* ... build graph ... */ vector<long long> dist = dijkstra(g, start_node);",
+    "function_signatures": [
+      "std::vector<long long> dijkstra(const Graph& graph, int start_node)"
+    ],
+    "template_parameters": ["typename CostType = long long"],
+    "time_complexity": "O(E log V) or O(V^2) depending on implementation (typically E log V with priority queue)",
+    "space_complexity": "O(V + E)",
+    "tags": ["graph", "shortest_path", "weighted_graph"],
+    "dependencies": ["vector", "priority_queue", "<utility> for pair"],
+    "notes": "Edge weights must be non-negative."
+  }
+  ```
 
 ### 8.6. 過去コンペ解法データ (例: `database/contests.db` - SQLite, または `database/ahc001.json`, `database/ahc002.json` など)
-SQLiteの場合のスキーマ例:
-* `contests` テーブル: `contest_id (TEXT PK)`, `title (TEXT)`, `date (TEXT)`, `problem_url (TEXT)`, `problem_summary (TEXT)`
-* `contest_tags` テーブル: `contest_id (TEXT FK)`, `tag (TEXT)`
-* `solution_approaches` テーブル: `solution_id (INTEGER PK)`, `contest_id (TEXT FK)`, `rank_range (TEXT)`, `algorithms_used (TEXT)`, `key_ideas (TEXT)`, `reference_url (TEXT)`
 
-JSONファイルの場合の例 (`database/ahc001.json`):
+SQLite の場合のスキーマ例:
+
+- `contests` テーブル: `contest_id (TEXT PK)`, `title (TEXT)`, `date (TEXT)`, `problem_url (TEXT)`, `problem_summary (TEXT)`
+- `contest_tags` テーブル: `contest_id (TEXT FK)`, `tag (TEXT)`
+- `solution_approaches` テーブル: `solution_id (INTEGER PK)`, `contest_id (TEXT FK)`, `rank_range (TEXT)`, `algorithms_used (TEXT)`, `key_ideas (TEXT)`, `reference_url (TEXT)`
+
+JSON ファイルの場合の例 (`database/ahc001.json`):
+
 ```json
 {
   "contest_id": "ahc001",
@@ -508,7 +568,11 @@ JSONファイルの場合の例 (`database/ahc001.json`):
   "solution_approaches": [
     {
       "rank_range": "Top 10",
-      "algorithms_used": ["Simulated Annealing", "Iterative Local Search", "Greedy"],
+      "algorithms_used": [
+        "Simulated Annealing",
+        "Iterative Local Search",
+        "Greedy"
+      ],
       "key_ideas": [
         "焼きなまし法の温度スケジュールと近傍探索の工夫 (swap, move, resize)",
         "高速なスコア差分計算",
@@ -523,10 +587,7 @@ JSONファイルの場合の例 (`database/ahc001.json`):
     {
       "rank_range": "Top 50",
       "algorithms_used": ["Beam Search", "Hill Climbing"],
-      "key_ideas": [
-        "ビームサーチのビーム幅と評価関数の設計",
-        "状態表現の工夫"
-      ],
+      "key_ideas": ["ビームサーチのビーム幅と評価関数の設計", "状態表現の工夫"],
       "reference_urls": [],
       "estimated_difficulty": "Medium"
     }
@@ -538,86 +599,92 @@ JSONファイルの場合の例 (`database/ahc001.json`):
 ## 9. 考慮事項
 
 ### 9.1. セキュリティ
-* LLM APIキーは設定ファイルや環境変数で管理し、ログへの直接出力を避ける。`.gitignore` に設定ファイルを含めないように注意。
-* Dockerコンテナ内でのコード実行により、ローカルシステムへの影響を限定する。コンテナはネットワークアクセスを制限するなど、最小権限の原則で実行する。
-* ユーザーが提供するコードや外部ライブラリの実行については、Dockerのサンドボックス機能に依存する。`init`でダウンロードするツール類は公式サイトからのものに限定し、安全性を確認する。
-* 外部サイトへのアクセス（問題文ダウンロードなど）はHTTPSを強制し、信頼できるソースからのみ行う。
+
+- LLM API キーは設定ファイルや環境変数で管理し、ログへの直接出力を避ける。`.gitignore` に設定ファイルを含めないように注意。
+- Docker コンテナ内でのコード実行により、ローカルシステムへの影響を限定する。コンテナはネットワークアクセスを制限するなど、最小権限の原則で実行する。
+- ユーザーが提供するコードや外部ライブラリの実行については、Docker のサンドボックス機能に依存する。`init`でダウンロードするツール類は公式サイトからのものに限定し、安全性を確認する。
+- 外部サイトへのアクセス（問題文ダウンロードなど）は HTTPS を強制し、信頼できるソースからのみ行う。
 
 ### 9.2. パフォーマンス
-* LLMへのリクエストは必要な情報に絞り、トークン数を最適化する。AlphaEvolveで示唆されるように、効果的なプロンプト設計が重要となる。過去のプロンプトとレスポンスを分析し、改善サイクルを回す。
-* C++コードのコンパイル・実行は効率的に行う。Dockerイメージの事前ビルドやキャッシュ活用。差分コンパイルの導入検討。
-* 長時間実行される進化プロセスでは、定期的な状態保存（チェックポイント）とリソース監視（CPU、メモリ）を行う。
-* 多数のテストケースを実行する場合、並列実行を検討する (ローカルCPUコア数に応じて)。
-* ファイルI/Oが多い処理（ログ書き込み、個体保存など）は、バッファリングや非同期処理を検討し、ボトルネックにならないようにする。
+
+- LLM へのリクエストは必要な情報に絞り、トークン数を最適化する。AlphaEvolve で示唆されるように、効果的なプロンプト設計が重要となる。過去のプロンプトとレスポンスを分析し、改善サイクルを回す。
+- C++コードのコンパイル・実行は効率的に行う。Docker イメージの事前ビルドやキャッシュ活用。差分コンパイルの導入検討。
+- 長時間実行される進化プロセスでは、定期的な状態保存（チェックポイント）とリソース監視（CPU、メモリ）を行う。
+- 多数のテストケースを実行する場合、並列実行を検討する (ローカル CPU コア数に応じて)。
+- ファイル I/O が多い処理（ログ書き込み、個体保存など）は、バッファリングや非同期処理を検討し、ボトルネックにならないようにする。
 
 ### 9.3. エラーハンドリングとリトライ
-* LLM API通信エラー（レート制限、タイムアウト、サーバーエラー）、Docker実行エラー、コードのコンパイル/実行時エラーなどを適切に捕捉し、ユーザーに分かりやすいエラーメッセージと可能な対処法を提示する。
-* LLM APIの一時的なエラーに対しては、指数バックオフを用いたリトライ機構を設ける。リトライ回数の上限も設定。
-* 致命的なエラー発生時は、可能な限り現在のセッション状態を保存し、安全に終了する。エラーログにはスタックトレースを含め、デバッグを容易にする。
-* `init` コマンドでのファイルダウンロード失敗時は、リトライ処理や代替ソースの検討を行う。
-* ユーザー入力のバリデーションを徹底し、予期せぬエラーを防ぐ。
+
+- LLM API 通信エラー（レート制限、タイムアウト、サーバーエラー）、Docker 実行エラー、コードのコンパイル/実行時エラーなどを適切に捕捉し、ユーザーに分かりやすいエラーメッセージと可能な対処法を提示する。
+- LLM API の一時的なエラーに対しては、指数バックオフを用いたリトライ機構を設ける。リトライ回数の上限も設定。
+- 致命的なエラー発生時は、可能な限り現在のセッション状態を保存し、安全に終了する。エラーログにはスタックトレースを含め、デバッグを容易にする。
+- `init` コマンドでのファイルダウンロード失敗時は、リトライ処理や代替ソースの検討を行う。
+- ユーザー入力のバリデーションを徹底し、予期せぬエラーを防ぐ。
 
 ### 9.4. ロギング
-* ログレベル (DEBUG, INFO, WARNING, ERROR, CRITICAL) を設定可能にし、`config` コマンドや環境変数で変更できるようにする。
-* セッションごとのログファイル (`session.log`) と、全体のアプリケーションログ (`ahc_agent.log`) を分離する。
-* 対話モードでは、重要な情報をコンソールに表示しつつ、詳細はログファイルに記録する。
-* LLMとのプロンプトとレスポンスの主要部分（またはハッシュ値とトークン数）をログに記録し、AlphaEvolve的な進化の過程を追跡できるようにする。APIキーなどの機密情報はマスキングする。
-* 構造化ロギング（JSON形式など）のオプションを提供し、ログ分析を容易にする。
-* ログローテーション機能（サイズベース、時間ベース）を検討。
+
+- ログレベル (DEBUG, INFO, WARNING, ERROR, CRITICAL) を設定可能にし、`config` コマンドや環境変数で変更できるようにする。
+- セッションごとのログファイル (`session.log`) と、全体のアプリケーションログ (`ahc_agent.log`) を分離する。
+- 対話モードでは、重要な情報をコンソールに表示しつつ、詳細はログファイルに記録する。
+- LLM とのプロンプトとレスポンスの主要部分（またはハッシュ値とトークン数）をログに記録し、AlphaEvolve 的な進化の過程を追跡できるようにする。API キーなどの機密情報はマスキングする。
+- 構造化ロギング（JSON 形式など）のオプションを提供し、ログ分析を容易にする。
+- ログローテーション機能（サイズベース、時間ベース）を検討。
 
 ## 10. 将来の展望 (マイルストーン外)
 
-* 対応プログラミング言語の追加 (Python, Rustなど)。それに伴うDockerイメージやコンパイル・実行ロジックの拡張。
-* より高度な知識ベースの活用 (過去の類似問題の解法パターンや効果的だったプロンプトの自動推薦など)。
-* 分散実行による大規模実験のサポート (例: Ray, Dask を使った複数マシンでの並列評価)。
-* 結果の可視化ツールの統合 (ローカルビジュアライザとの連携強化、`status`コマンドでの簡易グラフ表示、matplotlib等を利用したスコア推移グラフ生成)。
-* クラウドストレージ（S3, GCSなど）への実験結果やワークスペースのバックアップ・同期オプション。
-* `ahc-agent dashboard` コマンドによるWebベースの簡易ダッシュボード提供 (Flask/FastAPI + Chart.jsなど)。
-* ユーザーによる典型アルゴリズムライブラリや過去解法DBへの貢献・拡張機能 (例: GitHubリポジトリ経由でのプルリクエストベースの更新)。
-* より洗練された自然言語によるエージェントへの指示・対話機能。
-* マルチモーダルLLMを活用した問題図表の解析。
+- 対応プログラミング言語の追加 (Python, Rust など)。それに伴う Docker イメージやコンパイル・実行ロジックの拡張。
+- より高度な知識ベースの活用 (過去の類似問題の解法パターンや効果的だったプロンプトの自動推薦など)。
+- 分散実行による大規模実験のサポート (例: Ray, Dask を使った複数マシンでの並列評価)。
+- 結果の可視化ツールの統合 (ローカルビジュアライザとの連携強化、`status`コマンドでの簡易グラフ表示、matplotlib 等を利用したスコア推移グラフ生成)。
+- クラウドストレージ（S3, GCS など）への実験結果やワークスペースのバックアップ・同期オプション。
+- `ahc-agent dashboard` コマンドによる Web ベースの簡易ダッシュボード提供 (Flask/FastAPI + Chart.js など)。
+- ユーザーによる典型アルゴリズムライブラリや過去解法 DB への貢献・拡張機能 (例: GitHub リポジトリ経由でのプルリクエストベースの更新)。
+- より洗練された自然言語によるエージェントへの指示・対話機能。
+- マルチモーダル LLM を活用した問題図表の解析。
 
 ## 11. 用語集
 
-* **AHC**: AtCoder Heuristic Contest
-* **LLM**: Large Language Model (大規模言語モデル)
-* **CLI**: Command Line Interface
-* **AlphaEvolve**: DeepMindによって提案された、LLMをコーディングエージェントとして活用し、進化的手法でアルゴリズムを設計・改善するアプローチ。
-* **個体 (Individual/Candidate)**: 進化計算における一つの解候補（多くの場合、ソースコードとその評価結果）。
-* **世代 (Generation)**: 進化計算における一つの区切り。各世代で個体群が評価され、次の世代の個体が生成される。
-* **セッション (Session)**: `solve` コマンド一回の実行に対応する作業単位。設定、ログ、生成された解などが紐づく。
-* **ワークスペース (Workspace)**: 特定のコンペティション (`competition_id`) に関連する全てのファイル（問題文、ツール、セッションデータなど）を格納するディレクトリ。
-* **プロンプトエンジニアリング**: LLMから期待する出力を得るために、入力（プロンプト）を工夫する技術。
-* **トークン (Token)**: LLMがテキストを処理する際の基本単位。API利用料金はトークン数に基づいて計算されることが多い。
+- **AHC**: AtCoder Heuristic Contest
+- **LLM**: Large Language Model (大規模言語モデル)
+- **CLI**: Command Line Interface
+- **AlphaEvolve**: DeepMind によって提案された、LLM をコーディングエージェントとして活用し、進化的手法でアルゴリズムを設計・改善するアプローチ。
+- **個体 (Individual/Candidate)**: 進化計算における一つの解候補（多くの場合、ソースコードとその評価結果）。
+- **世代 (Generation)**: 進化計算における一つの区切り。各世代で個体群が評価され、次の世代の個体が生成される。
+- **セッション (Session)**: `solve` コマンド一回の実行に対応する作業単位。設定、ログ、生成された解などが紐づく。
+- **ワークスペース (Workspace)**: 特定のコンペティション (`competition_id`) に関連する全てのファイル（問題文、ツール、セッションデータなど）を格納するディレクトリ。
+- **プロンプトエンジニアリング**: LLM から期待する出力を得るために、入力（プロンプト）を工夫する技術。
+- **トークン (Token)**: LLM がテキストを処理する際の基本単位。API 利用料金はトークン数に基づいて計算されることが多い。
 
 ## 12. テスト計画
 
 ### 12.1. テスト戦略
-* **テストピラミッド**: 単体テストを最も多く、次に統合テスト、E2Eテストは主要なユーザーストーリーに絞って実施する。
-* **早期テスト・継続的テスト**: 開発の初期段階からテストを記述し、CIを通じてコミットごとにテストを自動実行する。バグは早期に発見・修正する。
-* **自動化**: 手動テストを極力減らし、単体・統合・E2Eテストの大部分を自動化する。
-* **カバレッジ目標**: コードカバレッジを計測し、主要モジュールで85%以上、全体で80%以上を目指す。カバレッジの低い箇所を特定し、テストを追加する。
-* **再現性と独立性**: テストは何度実行しても同じ結果となり、他のテストケースに依存しないように設計する。Dockerを利用してテスト環境の差異をなくす。
-* **モックとスタブの活用**: 外部依存（LLM API、Dockerデーモン、ファイルシステム、Webアクセス）は適切にモックまたはスタブ化し、テストの安定性と速度を向上させる。
-* **実環境に近いテスト**: E2Eテストや一部の統合テストでは、実際のLLM API（サンドボックス環境や低コストモデル）やDockerデーモンと連携させて動作を確認する。
+
+- **テストピラミッド**: 単体テストを最も多く、次に統合テスト、E2E テストは主要なユーザーストーリーに絞って実施する。
+- **早期テスト・継続的テスト**: 開発の初期段階からテストを記述し、CI を通じてコミットごとにテストを自動実行する。バグは早期に発見・修正する。
+- **自動化**: 手動テストを極力減らし、単体・統合・E2E テストの大部分を自動化する。
+- **カバレッジ目標**: コードカバレッジを計測し、主要モジュールで 85%以上、全体で 80%以上を目指す。カバレッジの低い箇所を特定し、テストを追加する。
+- **再現性と独立性**: テストは何度実行しても同じ結果となり、他のテストケースに依存しないように設計する。Docker を利用してテスト環境の差異をなくす。
+- **モックとスタブの活用**: 外部依存（LLM API、Docker デーモン、ファイルシステム、Web アクセス）は適切にモックまたはスタブ化し、テストの安定性と速度を向上させる。
+- **実環境に近いテスト**: E2E テストや一部の統合テストでは、実際の LLM API（サンドボックス環境や低コストモデル）や Docker デーモンと連携させて動作を確認する。
 
 ### 12.2. テストの種類と対象
-* **単体テスト (Unit Tests)**:
-    * 対象: 各モジュール内の個々の関数、クラスのメソッド。特にビジネスロジック、データ変換、計算処理など。
-    * 目的: 各コンポーネントが設計通りに独立して正しく動作することを確認する。境界値分析、異常系入力も考慮。
-    * ツール: `pytest`, `unittest.mock`.
-* **統合テスト (Integration Tests)**:
-    * 対象: 複数のモジュール間のインターフェースと連携部分。例: `LLMClient` と実際のLLM API (モック/実API)、`DockerManager` とローカルDockerデーモン、`EvolutionaryEngine` と `ImplementationDebugger` の連携など。
-    * 目的: モジュール間のデータフロー、制御フロー、契約（API仕様）が正しく機能することを確認する。
-    * ツール: `pytest`, Docker SDK, モックサーバー (例: `aiohttp.pytest_plugin` で作る簡易APIサーバー)。
-* **E2Eテスト (End-to-End Tests)**:
-    * 対象: 主要なCLIコマンド (`ahc-agent init competition_id`, `ahc-agent solve` の一連のフローなど) をユーザー視点で実行。
-    * 目的: システム全体が実際の使用シナリオにおいて期待通りに動作することを確認する。設定ファイル、入出力ファイル、ログファイルなども含めて検証。
-    * ツール: `pytest` + `subprocess` モジュール、カスタムシェルスクリプト。実際の（または簡略化された）AHC問題のサンプルケースを使用。
-* **パフォーマンステスト**:
-    * 対象: `solve` コマンドの実行時間（特に進化ループ1世代あたりの処理時間）、LLM APIの平均レスポンスタイム、Dockerコンテナの起動・実行時間、メモリ使用量。
-    * 目的: システムが許容可能なパフォーマンス要件を満たしていることを確認し、ボトルネックを特定する。
-    * ツール: `time` コマンド, `cProfile`, `memory_profiler`, `pytest-benchmark`。LLM API負荷テストは限定的に実施。
-* **ユーザビリティテスト**: (手動テストが中心となるが、CLI出力の一貫性などは一部自動チェック可能)
-    * 対象: CLIのコマンド体系、オプションの分かりやすさ、エラーメッセージの明確さ、ログの有用性、ドキュメントの正確性。
-    * 目的: ユーザーが直感的に、かつ効率的にツールを操作できることを確認する。開発チーム内でのドッグフーディングや、ベータテスターからのフィードバックを重視。
+
+- **単体テスト (Unit Tests)**:
+  - 対象: 各モジュール内の個々の関数、クラスのメソッド。特にビジネスロジック、データ変換、計算処理など。
+  - 目的: 各コンポーネントが設計通りに独立して正しく動作することを確認する。境界値分析、異常系入力も考慮。
+  - ツール: `pytest`, `unittest.mock`.
+- **統合テスト (Integration Tests)**:
+  - 対象: 複数のモジュール間のインターフェースと連携部分。例: `LLMClient` と実際の LLM API (モック/実 API)、`DockerManager` とローカル Docker デーモン、`EvolutionaryEngine` と `ImplementationDebugger` の連携など。
+  - 目的: モジュール間のデータフロー、制御フロー、契約（API 仕様）が正しく機能することを確認する。
+  - ツール: `pytest`, Docker SDK, モックサーバー (例: `aiohttp.pytest_plugin` で作る簡易 API サーバー)。
+- **E2E テスト (End-to-End Tests)**:
+  - 対象: 主要な CLI コマンド (`ahc-agent init competition_id`, `ahc-agent solve` の一連のフローなど) をユーザー視点で実行。
+  - 目的: システム全体が実際の使用シナリオにおいて期待通りに動作することを確認する。設定ファイル、入出力ファイル、ログファイルなども含めて検証。
+  - ツール: `pytest` + `subprocess` モジュール、カスタムシェルスクリプト。実際の（または簡略化された）AHC 問題のサンプルケースを使用。
+- **パフォーマンステスト**:
+  - 対象: `solve` コマンドの実行時間（特に進化ループ 1 世代あたりの処理時間）、LLM API の平均レスポンスタイム、Docker コンテナの起動・実行時間、メモリ使用量。
+  - 目的: システムが許容可能なパフォーマンス要件を満たしていることを確認し、ボトルネックを特定する。
+  - ツール: `time` コマンド, `cProfile`, `memory_profiler`, `pytest-benchmark`。LLM API 負荷テストは限定的に実施。
+- **ユーザビリティテスト**: (手動テストが中心となるが、CLI 出力の一貫性などは一部自動チェック可能)
+  - 対象: CLI のコマンド体系、オプションの分かりやすさ、エラーメッセージの明確さ、ログの有用性、ドキュメントの正確性。
+  - 目的: ユーザーが直感的に、かつ効率的にツールを操作できることを確認する。開発チーム内でのドッグフーディングや、ベータテスターからのフィードバックを重視。
