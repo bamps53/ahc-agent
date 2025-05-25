@@ -121,16 +121,24 @@ class TestCLI:
         mock_asyncio_run.side_effect = run_coro_side_effect
 
         # Create a temporary problem file
-        with runner.isolated_filesystem():
+        with runner.isolated_filesystem() as temp_dir:  # 一時ディレクトリを取得
             # Create problem file
-            with open("problem.md", "w") as f:
+            problem_file_path = Path(temp_dir) / "problem.md"
+            with open(problem_file_path, "w") as f:
                 f.write("# Test Problem\n\nThis is a test problem.")
 
-            # Run solve command
-            result = runner.invoke(cli, ["solve", "problem.md"])
+            # Create dummy ahc_config.yaml
+            config_file_path = Path(temp_dir) / "ahc_config.yaml"
+            with open(config_file_path, "w") as f:
+                yaml.dump({"contest_id": "test_contest"}, f)
+
+            # Run solve command with the directory path
+            result = runner.invoke(cli, ["solve", temp_dir])
 
             # Check result
-            assert result.exit_code == 0
+            assert (
+                result.exit_code == 0
+            ), f"CLI exited with code {result.exit_code} and error {result.exception}\nOutput: {result.output}"
 
             # Check asyncio.run call
             mock_asyncio_run.assert_called_once()
@@ -384,8 +392,11 @@ class TestCLI:
         assert f"Project configuration saved to {config_file}" in result.output
 
     @patch("ahc_agent.cli._solve_problem")
+    @patch("ahc_agent.cli.asyncio.run")
     @patch("ahc_agent.cli.Config")
-    def test_solve_command_with_workspace(self, MockConfig, mock_solve_problem_async, runner, tmp_path):
+    def test_solve_command_with_workspace(
+        self, mock_Config_class_arg, mock_asyncio_run_arg, mock_solve_problem_arg, runner, tmp_path
+    ):
         """Test the solve command with a workspace argument."""
         contest_id = "ahc999"
         workspace_dir = tmp_path / contest_id
@@ -437,9 +448,26 @@ class TestCLI:
 
         mock_config_instance_loaded.get.side_effect = mock_get_side_effect
 
-        MockConfig.side_effect = [MagicMock(spec=Config), mock_config_instance_loaded]
+        mock_Config_class_arg.side_effect = [MagicMock(spec=Config), mock_config_instance_loaded]
 
-        mock_solve_problem_async.return_value = asyncio.Future()
+        # _solve_problem がコルーチン関数であると仮定し、AsyncMock を return_value に設定
+        mock_solve_problem_arg.return_value = AsyncMock()  # AsyncMockインスタンスを返す
+
+        # asyncio.run が呼び出されたときに、渡されたコルーチンを実行するような side_effect
+        def run_coro_side_effect(coro, *_args, **_kwargs):
+            async def dummy_coro():
+                return await coro
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(dummy_coro())
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+            return result
+
+        mock_asyncio_run_arg.side_effect = run_coro_side_effect
 
         result = runner.invoke(cli, ["solve", str(workspace_dir)])
 
@@ -452,25 +480,51 @@ class TestCLI:
 
         assert result.exit_code == 0, f"CLI exited with code {result.exit_code} and error {result.exception}"
 
-        assert MockConfig.call_count >= 1
+        assert mock_Config_class_arg.call_count >= 1
 
-        mock_solve_problem_async.assert_called_once()
-        called_args, called_kwargs = mock_solve_problem_async.call_args
+        mock_solve_problem_arg.assert_called_once()
+        mock_asyncio_run_arg.assert_called_once()  # asyncio.runが呼ばれたことを確認
+        called_args, called_kwargs = mock_solve_problem_arg.call_args
 
         # 呼び出し引数の検証
         assert called_args[0] == mock_config_instance_loaded  # Config オブジェクト
         assert called_args[1] == problem_text_content  # 問題文のテキスト
-        assert called_args[2] == str(problem_file)  # problem.md のパス
-        assert called_args[3] is None  # session_id (このテストではデフォルトのNone)
-        assert called_args[4] is False  # interactive (このテストではデフォルトのFalse)
+        assert called_args[2] is None  # session_id は渡されていないはず
+        assert called_args[3] is False  # interactive (このテストではデフォルトのFalse)
         assert called_kwargs == {}  # キーワード引数は渡されないはず
 
         assert f"Solving problem in workspace: {workspace_dir}" in result.output
         assert f"Using config: {config_file}" in result.output
 
-    def test_init_command_with_existing_target_dir_as_file(self, runner, tmp_path, mock_config, mock_scraper):
-        # ... (rest of the code remains the same)
-        pass
+    @patch("ahc_agent.cli.scrape_and_setup_problem")  # scrape_and_setup_problemもモックする
+    @patch("ahc_agent.cli.Config")
+    def test_init_command_with_existing_target_dir_as_file(self, MockConfig, mock_scrape_and_setup_problem, runner, tmp_path):
+        # Mock Config
+        mock_config_instance = MagicMock()
+        MockConfig.return_value = mock_config_instance
+        mock_config_instance.get.side_effect = lambda key, default=None: default  # シンプルなgetのモック
+
+        # モックされた scrape_and_setup_problem が呼ばれないようにするか、期待通りに処理する
+        mock_scrape_and_setup_problem.return_value = None
+
+        contest_id = "ahc888"
+        # 一時ファイルシステム内に、初期化ターゲットと同名のファイルを作成
+        target_path_as_file = tmp_path / contest_id
+        with open(target_path_as_file, "w") as f:
+            f.write("This is a file, not a directory.")
+
+        # init コマンドを実行 (workspaceオプションで既存のファイルパスを指定)
+        result = runner.invoke(cli, ["init", contest_id, "--workspace", str(target_path_as_file)])
+
+        # エラーが発生することを期待 (例えばディレクトリ作成に失敗)
+        assert result.exit_code != 0, "CLI should exit with an error code."
+        assert "Error creating project directory" in result.output  # エラーメッセージを確認
+
+        # 元のファイルが変更されていないことを確認
+        assert target_path_as_file.is_file()
+        with open(target_path_as_file) as f:
+            content = f.read()
+            assert content == "This is a file, not a directory."
 
 
 # To run these tests, navigate to the project root directory and run:

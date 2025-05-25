@@ -70,7 +70,7 @@ def cli(ctx, config, verbose, quiet, no_docker):
     "-w",
     type=click.Path(),
     default=None,
-    help=("Directory to create the project in. " "If not set, creates a directory named CONTEST_ID in the current location."),
+    help=("Directory to create the project in. If not set, creates a directory named CONTEST_ID in the current location."),
 )
 @click.argument("contest_id", type=str, required=True)
 @click.pass_context
@@ -91,15 +91,21 @@ def init(ctx, template, docker_image, workspace, contest_id):
     project_dir = Path(workspace).resolve() if workspace else Path.cwd() / contest_id
 
     try:
-        project_dir.mkdir(parents=True, exist_ok=True)
+        # project_dir がファイルの場合、mkdirは FileExistsError を送出する
+        project_dir.mkdir(parents=True, exist_ok=False)  # exist_ok=False に変更
         display_path = project_dir
         with contextlib.suppress(ValueError):
             display_path = project_dir.relative_to(Path.cwd())
         click.echo(f"Initialized AHC project in ./{display_path}")
 
+    except FileExistsError:  # FileExistsError を明示的にキャッチ
+        click.echo(
+            f"Error creating project directory: '{project_dir}' already exists and is a file or non-empty directory.", err=True
+        )
+        ctx.exit(1)
     except Exception as e:
         click.echo(f"Error creating project directory '{project_dir}': {e}", err=True)
-        return
+        ctx.exit(1)
 
     project_specific_config_data = {
         "contest_id": contest_id,
