@@ -24,17 +24,14 @@ jobs:
         uses: actions/checkout@v4
 
       # 2. 指定したバージョンのPythonセットアップ
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "pip" # pipの依存関係をキャッシュ
 
       # 3. 依存関係のインストール
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]" # パッケージ自体と開発用依存関係をインストール
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
 
       # 4. Ruffでリンターを実行
       - name: Lint with Ruff

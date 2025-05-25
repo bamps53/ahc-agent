@@ -49,23 +49,25 @@ ahc-agent init ahc001 --workspace ./my_ahc_project --template custom_cpp --docke
 
 ### 2\. Solve a Problem
 
-Solves the problem based on the provided problem description file.
+Solves the problem based on the problem description and configuration within the specified workspace directory.
+**The workspace directory must contain `problem.md` (the problem statement) and `ahc_config.yaml` (the project configuration).**
 
 ```bash
-ahc-agent solve path/to/problem_description.md --time-limit 1800 --generations 50 --population-size 20
+ahc-agent solve path/to/your_workspace_directory --time-limit 1800 --generations 50 --population-size 20
 ```
 
-- `PROBLEM_FILE`: Path to the problem description file.
+- `WORKSPACE`: Path to the workspace directory.
 - `--time-limit SECONDS` (`-t`): Set the time limit (in seconds) for the evolutionary algorithm.
 - `--generations NUM` (`-g`): Set the maximum number of generations for the evolutionary algorithm.
 - `--population-size NUM` (`-p`): Set the population size for the evolutionary algorithm.
 
 ### 3\. Solve a Problem in Interactive Mode
 
-Guides you through the problem-solving process step-by-step.
+Guides you through the problem-solving process step-by-step using the problem and configuration in the specified workspace.
+**The workspace directory must contain `problem.md` and `ahc_config.yaml`.**
 
 ```bash
-ahc-agent solve path/to/problem_description.md --interactive
+ahc-agent solve path/to/your_workspace_directory --interactive
 ```
 
 Available commands in interactive mode:

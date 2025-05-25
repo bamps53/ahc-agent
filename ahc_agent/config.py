@@ -20,6 +20,7 @@ class Config:
         Args:
             config_path_or_dict: Path to configuration file or configuration dictionary
         """
+        self.config_file_path: Optional[str] = None
         # Default configuration
         self.config = {
             "llm": {"provider": "litellm", "model": "o4-mini", "temperature": 1.0, "max_tokens": 4000, "timeout": 60},
@@ -47,6 +48,7 @@ class Config:
         if config_path_or_dict:
             if isinstance(config_path_or_dict, str):
                 # Load from file
+                self.config_file_path = config_path_or_dict
                 try:
                     with open(config_path_or_dict) as f:
                         loaded_config = yaml.safe_load(f)

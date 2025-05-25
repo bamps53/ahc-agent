@@ -70,7 +70,7 @@ def cli(ctx, config, verbose, quiet, no_docker):
     "-w",
     type=click.Path(),
     default=None,
-    help=("Directory to create the project in. " "If not set, creates a directory named CONTEST_ID in the current location."),
+    help=("Directory to create the project in. If not set, creates a directory named CONTEST_ID in the current location."),
 )
 @click.argument("contest_id", type=str, required=True)
 @click.pass_context
@@ -91,15 +91,21 @@ def init(ctx, template, docker_image, workspace, contest_id):
     project_dir = Path(workspace).resolve() if workspace else Path.cwd() / contest_id
 
     try:
-        project_dir.mkdir(parents=True, exist_ok=True)
+        # project_dir がファイルの場合、mkdirは FileExistsError を送出する
+        project_dir.mkdir(parents=True, exist_ok=False)  # exist_ok=False に変更
         display_path = project_dir
         with contextlib.suppress(ValueError):
             display_path = project_dir.relative_to(Path.cwd())
         click.echo(f"Initialized AHC project in ./{display_path}")
 
+    except FileExistsError:  # FileExistsError を明示的にキャッチ
+        click.echo(
+            f"Error creating project directory: '{project_dir}' already exists and is a file or non-empty directory.", err=True
+        )
+        ctx.exit(1)
     except Exception as e:
         click.echo(f"Error creating project directory '{project_dir}': {e}", err=True)
-        return
+        ctx.exit(1)
 
     project_specific_config_data = {
         "contest_id": contest_id,
@@ -126,55 +132,89 @@ def init(ctx, template, docker_image, workspace, contest_id):
 
 
 @cli.command()
-@click.argument("problem_file", type=click.Path(exists=True))
+@click.argument("workspace", type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True))
 @click.option("--session-id", "-s", type=str, help="Session ID for resuming")
 @click.option("--time-limit", "-t", type=int, help="Time limit in seconds")
 @click.option("--generations", "-g", type=int, help="Maximum number of generations")
 @click.option("--population-size", "-p", type=int, help="Population size")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
 @click.pass_context
-def solve(ctx, problem_file, session_id, time_limit, generations, population_size, interactive):
+def solve(ctx, workspace, session_id, time_limit, generations, population_size, interactive):
     """
-    Solve a problem.
+    Solve a problem in the specified workspace.
+    The workspace must contain 'problem.md' and 'ahc_config.yaml'.
     """
-    config = ctx.obj["config"]
+    workspace_path = Path(workspace)
+    problem_file_path = workspace_path / "problem.md"
+    config_file_path = workspace_path / "ahc_config.yaml"
 
-    # Override configuration with command-line options
-    if time_limit:
+    if not problem_file_path.exists():
+        click.echo(f"Error: 'problem.md' not found in workspace '{workspace_path}'.", err=True)
+        ctx.exit(1)
+    if not config_file_path.exists():
+        click.echo(f"Error: 'ahc_config.yaml' not found in workspace '{workspace_path}'.", err=True)
+        ctx.exit(1)
+
+    # Load configuration specifically from the workspace's ahc_config.yaml
+    # This overrides any globally passed config from the main cli context for this command's scope.
+    try:
+        config = Config(str(config_file_path))
+        # Ensure workspace.base_dir in the loaded config points to the provided workspace
+        # This is important if the ahc_config.yaml itself has a different workspace.base_dir
+        config.set("workspace.base_dir", str(workspace_path))
+    except Exception as e:
+        click.echo(f"Error loading config from '{config_file_path}': {e}", err=True)
+        ctx.exit(1)
+
+    click.echo(f"Solving problem in workspace: {workspace_path}")
+    click.echo(f"Using config: {config.config_file_path}")
+
+    # Override loaded configuration with command-line options
+    if time_limit is not None:
         config.set("evolution.time_limit_seconds", time_limit)
 
-    if generations:
+    if generations is not None:
         config.set("evolution.max_generations", generations)
 
-    if population_size:
+    if population_size is not None:
         config.set("evolution.population_size", population_size)
 
     # Read problem file
-    with open(problem_file) as f:
-        problem_text = f.read()
+    try:
+        with open(problem_file_path) as f:
+            problem_text = f.read()
+    except Exception as e:
+        click.echo(f"Error reading problem file '{problem_file_path}': {e}", err=True)
+        ctx.exit(1)
 
     # Run solver
-    asyncio.run(_solve_problem(config, problem_text, problem_file, session_id, interactive))
+    asyncio.run(_solve_problem(config, problem_text, session_id, interactive))
 
 
-async def _solve_problem(config, problem_text, problem_file, session_id=None, interactive=False):
+async def _solve_problem(config, problem_text, session_id=None, interactive=False):
     """
     Solve a problem asynchronously.
     """
     # Initialize clients and modules
     llm_client = LLMClient(config.get("llm"))
     docker_manager = DockerManager(config.get("docker"))
-    problem_id = os.path.splitext(os.path.basename(problem_file))[0]
-    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"), problem_id=problem_id)
+    contest_id_from_config = config.get("contest_id")
+    if not contest_id_from_config:
+        # 設定ファイルに contest_id がない場合、ワークスペース名から推測
+        contest_id_from_config = Path(config.get("workspace.base_dir")).name
+        click.echo(
+            f"Warning: 'contest_id' not found in config, using workspace name "
+            f"'{contest_id_from_config}' as problem_id for KnowledgeBase.",
+            err=True,
+        )
+
+    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"), problem_id=contest_id_from_config)
+
     problem_analyzer = ProblemAnalyzer(llm_client, config.get("analyzer"))
     solution_strategist = SolutionStrategist(llm_client, config.get("strategist"))
     evolutionary_engine = EvolutionaryEngine(llm_client, config.get("evolution"))
     implementation_debugger = ImplementationDebugger(llm_client, docker_manager, config.get("debugger"))
     problem_logic = ProblemLogic(llm_client, config.get("problem_logic"))
-
-    # Get workspace directory
-    workspace_dir = config.get("workspace.base_dir")
-    workspace_dir = os.path.expanduser(workspace_dir)
 
     # Create or get session
     if session_id:
@@ -275,7 +315,7 @@ async def _solve_problem(config, problem_text, problem_file, session_id=None, in
         solution_strategy,
         initial_solution,
         lambda code: evaluate_solution(code, test_cases, score_calculator),
-        os.path.join(workspace_dir, "sessions", session_id),
+        os.path.join(config.get("workspace.base_dir"), "sessions", session_id),
     )
 
     # Save evolution log
@@ -290,7 +330,8 @@ async def _solve_problem(config, problem_text, problem_file, session_id=None, in
 
     click.echo(f"Evolution complete: {result['generations_completed']} generations")
     click.echo(f"Best score: {result['best_score']}")
-    click.echo(f"Best solution saved to {os.path.join(workspace_dir, 'sessions', session_id, 'solutions', 'best.cpp')}")
+    best_solution_path = os.path.join(config.get("workspace.base_dir"), "sessions", session_id, "solutions", "best.cpp")
+    click.echo(f"Best solution saved to {best_solution_path}")
 
 
 async def _interactive_solve(
@@ -562,7 +603,7 @@ async def _interactive_solve(
                     solution_strategy,
                     initial_code,
                     evaluate_solution,
-                    os.path.join(workspace_dir, "sessions", session_id),
+                    os.path.join(config.get("workspace.base_dir"), "sessions", session_id),
                 )
 
                 # Save evolution log
