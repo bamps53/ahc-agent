@@ -38,7 +38,7 @@ class TestConfig:
         assert config.get("llm.provider") == "litellm"
         assert config.get("llm.model") == "gpt-4"
         assert config.get("docker.enabled") is True
-        assert config.get("workspace.base_dir") == "~/ahc_workspace"
+        assert config.get("workspace.base_dir") == "./workspace"
 
     def test_init_with_file(self, sample_config):
         """

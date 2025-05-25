@@ -81,7 +81,7 @@ class EvolutionaryEngine:
         if workspace_dir:
             workspace_dir = ensure_directory(workspace_dir)
         else:
-            workspace_dir = ensure_directory(os.path.join(os.getcwd(), "ahc_workspace"))
+            workspace_dir = ensure_directory(os.path.join(os.getcwd(), "workspace"))
 
         # Initialize evolution log
         evolution_log = {

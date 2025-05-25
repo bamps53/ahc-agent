@@ -29,7 +29,7 @@ class Config:
                 "cpp_compiler": "g++",
                 "cpp_flags": "-std=c++17 -O2 -Wall",
             },
-            "workspace": {"base_dir": "~/ahc_workspace"},
+            "workspace": {"base_dir": "./workspace"},
             "evolution": {
                 "max_generations": 30,
                 "population_size": 10,
