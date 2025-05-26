@@ -1,5 +1,62 @@
 # AHCAgent CLI ツール アーキテクチャ設計
 
+## システムアーキテクチャ
+
+```mermaid
+graph LR
+    User[👨 User] --> CLIMain["CLI (cli.py)"];
+
+    subgraph "AHCAgent System"
+        CLIMain -- Manages/Uses --> Config["⚙️ Configuration (config.py)"];
+        CLIMain -- "init" --> ScraperUtil["🕸️ Web Scraper (scraper.py)"];
+        ScraperUtil --> ExternalAtCoder["🌐 AtCoder Website"];
+
+        CLIMain -- "solve" --> CoreLogic;
+        CLIMain -- "status/submit" --> KB["📚 Knowledge Base (knowledge.py)"];
+        CLIMain -- "docker" --> DockerUtil["🐳 Docker Manager (docker_manager.py)"];
+
+        subgraph "Core Logic"
+            direction LR
+            Engine["🧠 Evolutionary Engine (engine.py)"];
+            Analyzer["🧩 Problem Analyzer (analyzer.py)"];
+            Strategist["♟️ Solution Strategist (strategist.py)"];
+            Debugger["🐞 Implementation Debugger (debugger.py)"];
+            ProblemHandler["📐 Problem Logic (problem_logic.py)"];
+
+            Engine --> Analyzer;
+            Engine --> Strategist;
+            Engine --> Debugger;
+            Engine --> ProblemHandler;
+            Engine --> KB;
+
+            Analyzer --> LLMUtil["🤖 LLM Client (llm.py)"];
+            Strategist --> LLMUtil;
+            Debugger --> LLMUtil;
+            ProblemHandler --> LLMUtil;
+            Debugger --> DockerUtil;
+        end
+
+        KB -- Stores/Retrieves --> FileSystem["🗂️ Filesystem (Workspace, Logs, Solutions)"];
+        LLMUtil -- Interacts --> ExternalLLMAPI["☁️ LLM API"];
+        DockerUtil -- Interacts --> LocalDockerDaemon["🐳 Docker Daemon"];
+        CoreLogic -- Uses --> FileIOUtil["📄 File I/O (file_io.py)"];
+        CoreLogic -- Uses --> LoggingUtil["📜 Logging (logging.py)"];
+    end
+
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style CLIMain fill:#bbf,stroke:#333,stroke-width:2px
+    style Config fill:#eee,stroke:#333,stroke-width:1px
+    style CoreLogic fill:#ffc,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
+    style Engine fill:#ffd,stroke:#333,stroke-width:2px
+    style KB fill:#dfd,stroke:#333,stroke-width:2px
+    style LLMUtil fill:#fcc,stroke:#333,stroke-width:2px
+    style DockerUtil fill:#cff,stroke:#333,stroke-width:2px
+    style ExternalAtCoder fill:#e9e,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style ExternalLLMAPI fill:#e9e,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style LocalDockerDaemon fill:#e9e,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style FileSystem fill:#ddd,stroke:#333,stroke-width:1px
+```
+
 ## 1. パッケージ構造
 
 ```
