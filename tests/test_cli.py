@@ -248,6 +248,19 @@ class TestCLI:
 
         mock_config_instance.get.side_effect = mock_get_side_effect
 
+        # Define a side effect for the mock_scraper to simulate directory and file creation
+        def scraper_side_effect(url, base_output_dir):
+            # Simulate the creation of tools/in directory and a sample test file
+            # base_output_dir is expected to be project_dir in this context
+            project_path = Path(base_output_dir)
+            tools_path = project_path / "tools"
+            tools_in_path = tools_path / "in"
+            tools_in_path.mkdir(parents=True, exist_ok=True)
+            (tools_in_path / "0000.txt").touch()
+            return True  # Indicate success, similar to the real function
+
+        mock_scraper.side_effect = scraper_side_effect
+
         # Change current working directory to tmp_path for the test
         os.chdir(tmp_path)
 
@@ -268,6 +281,15 @@ class TestCLI:
 
         expected_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
         mock_scraper.assert_called_once_with(expected_url, str(project_dir))
+
+        tools_dir = project_dir / "tools"
+        in_dir = tools_dir / "in"
+        sample_test_case_file = in_dir / "0000.txt"
+
+        assert tools_dir.is_dir(), "tools directory should be created"
+        assert in_dir.is_dir(), "tools/in directory should be created"
+        assert sample_test_case_file.is_file(), "sample test case file (0000.txt) should be created in tools/in"
+
         assert (
             f"Initialized AHC project in ./{contest_id}" in result.output
             or f"Initialized AHC project in {project_dir}" in result.output
@@ -294,6 +316,17 @@ class TestCLI:
 
         mock_config_instance.get.side_effect = mock_get_side_effect
 
+        # Define a side effect for the mock_scraper to simulate directory and file creation
+        def scraper_side_effect(url, base_output_dir):
+            project_path = Path(base_output_dir)
+            tools_path = project_path / "tools"
+            tools_in_path = tools_path / "in"
+            tools_in_path.mkdir(parents=True, exist_ok=True)
+            (tools_in_path / "0000.txt").touch()
+            return True
+
+        mock_scraper.side_effect = scraper_side_effect
+
         # Create workspace_path relative to tmp_path for isolation
         workspace_path_relative = Path(workspace_name)
         workspace_path_absolute = tmp_path / workspace_name
@@ -317,6 +350,15 @@ class TestCLI:
 
         expected_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
         mock_scraper.assert_called_once_with(expected_url, str(workspace_path_absolute))
+
+        tools_dir = workspace_path_absolute / "tools"
+        in_dir = tools_dir / "in"
+        sample_test_case_file = in_dir / "0000.txt"
+
+        assert tools_dir.is_dir(), "tools directory should be created"
+        assert in_dir.is_dir(), "tools/in directory should be created"
+        assert sample_test_case_file.is_file(), "sample test case file (0000.txt) should be created in tools/in"
+
         assert (
             f"Initialized AHC project in ./{workspace_path_relative}" in result.output
             or f"Initialized AHC project in {workspace_path_relative}" in result.output
@@ -330,6 +372,17 @@ class TestCLI:
         contest_id = "ahc997"
         custom_template = "cpp_pro"
         custom_image = "my_cpp_env:1.0"
+
+        # Define a side effect for the mock_scraper to simulate directory and file creation
+        def scraper_side_effect(url, base_output_dir):
+            project_path = Path(base_output_dir)
+            tools_path = project_path / "tools"
+            tools_in_path = tools_path / "in"
+            tools_in_path.mkdir(parents=True, exist_ok=True)
+            (tools_in_path / "0000.txt").touch()
+            return True
+
+        mock_scraper.side_effect = scraper_side_effect
 
         os.chdir(tmp_path)  # Ensure relative paths are handled from a known base
 
@@ -348,6 +401,15 @@ class TestCLI:
         assert project_config["docker_image"] == custom_image
         expected_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
         mock_scraper.assert_called_once_with(expected_url, str(project_dir))
+
+        tools_dir = project_dir / "tools"
+        in_dir = tools_dir / "in"
+        sample_test_case_file = in_dir / "0000.txt"
+
+        assert tools_dir.is_dir(), "tools directory should be created"
+        assert in_dir.is_dir(), "tools/in directory should be created"
+        assert sample_test_case_file.is_file(), "sample test case file (0000.txt) should be created in tools/in"
+
         assert (
             f"Initialized AHC project in ./{contest_id}" in result.output
             or f"Initialized AHC project in {project_dir}" in result.output

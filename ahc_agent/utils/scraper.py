@@ -219,6 +219,15 @@ def scrape_and_setup_problem(url, base_output_dir="."):
             target_tools_dir = os.path.join(problem_specific_dir, "tools")
             if not download_and_extract_visualizer(visualizer_zip_url, target_tools_dir):
                 print("Visualizer download/extraction failed. Continuing without visualizer.")
+        else:
+            # Create tools directory even if visualizer is not present, for consistency
+            target_tools_dir = os.path.join(problem_specific_dir, "tools")
+            os.makedirs(target_tools_dir, exist_ok=True)
+
+        # Create tools/in directory for test cases
+        target_tools_in_dir = os.path.join(target_tools_dir, "in")
+        os.makedirs(target_tools_in_dir, exist_ok=True)
+        print(f"Created directory for test cases: {target_tools_in_dir}")
 
         return True
 
