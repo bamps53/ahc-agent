@@ -1,11 +1,13 @@
+import datetime  # for _format_timestamp
 import logging
 import time
-import datetime # for _format_timestamp
+from typing import Optional
 
-from ..config import Config
-from ..core.knowledge import KnowledgeBase
+from ahc_agent.config import Config
+from ahc_agent.core.knowledge import KnowledgeBase
 
 logger = logging.getLogger(__name__)
+
 
 class StatusService:
     def __init__(self, config: Config, knowledge_base: KnowledgeBase):
@@ -33,14 +35,14 @@ class StatusService:
         """
         Format a duration in seconds.
         """
-        if seconds is None: # Check for None explicitly
+        if seconds is None:  # Check for None explicitly
             return "Unknown"
         try:
             s = int(seconds)
         except (TypeError, ValueError):
             return "Invalid duration"
 
-        if s == 0: # Handle 0 seconds specifically if desired, or let it fall through
+        if s == 0:  # Handle 0 seconds specifically if desired, or let it fall through
             return "0s"
 
         minutes, s = divmod(s, 60)
@@ -61,7 +63,9 @@ class StatusService:
 
         lines.append("\n=== Session Status ===")
         lines.append(f"Session ID: {session_id}")
-        lines.append(f"Problem: {session.get('problem_id', 'Unknown')}") # problem_id is usually in metadata
+        # problem_id can be directly in session or in metadata, prioritize metadata
+        problem_id = session.get("metadata", {}).get("problem_id") or session.get("problem_id", "Unknown")
+        lines.append(f"Problem: {problem_id}")
         lines.append(f"Created: {self._format_timestamp(session.get('created_at'))}")
         lines.append(f"Updated: {self._format_timestamp(session.get('updated_at'))}")
         lines.append(f"Status: {session.get('status', 'Unknown')}")
@@ -89,10 +93,10 @@ class StatusService:
             lines.append(f"Best Solution: Available (score: {best_solution.get('score', 'Unknown')})")
         else:
             lines.append("Best Solution: Not available")
-            
+
         return lines
 
-    def get_status(self, session_id: str = None, watch: bool = False) -> list[str]:
+    def get_status(self, session_id: Optional[str] = None, watch: bool = False) -> list[str]:
         """
         Retrieves and formats status information for sessions.
         Logs the information and returns it as a list of strings.
@@ -113,7 +117,7 @@ class StatusService:
 
             status_strings = self._format_session_status(session)
             for line in status_strings:
-                logger.info(line) # Logging as per prompt
+                logger.info(line)  # Logging as per prompt
             output_lines.extend(status_strings)
 
             if watch:
@@ -131,7 +135,7 @@ class StatusService:
                             # The prompt says "return a list of strings", which implies the *current* status.
                             # For watch mode, the primary output is through logging.
                             # We could update output_lines to the latest status if needed.
-                            output_lines = watched_status_strings # Keep only the latest status
+                            output_lines = watched_status_strings  # Keep only the latest status
                         else:
                             logger.info(f"Session {session_id} no longer found. Stopping watch.")
                             break
@@ -143,7 +147,7 @@ class StatusService:
                 msg = "No sessions found"
                 logger.info(msg)
                 output_lines.append(msg)
-                return output_lines # Return early
+                return output_lines  # Return early
 
             summary_header = f"Found {len(sessions)} sessions:"
             logger.info(summary_header)
@@ -151,16 +155,21 @@ class StatusService:
 
             for session_data in sessions:
                 # Mimicking the brief summary from cli.py for list view
-                line = (f"\nSession ID: {session_data.get('session_id')}\n"
-                        f"  Problem: {session_data.get('problem_id', session_data.get('metadata', {}).get('problem_id', 'Unknown'))}\n"
-                        f"  Created: {self._format_timestamp(session_data.get('created_at'))}\n"
-                        f"  Status: {session_data.get('status', 'Unknown')}")
+                # Get problem_id with metadata priority
+                problem_id = session_data.get("metadata", {}).get("problem_id") or session_data.get("problem_id", "Unknown")
+
+                line = (
+                    f"\nSession ID: {session_data.get('session_id')}\n"
+                    f"  Problem: {problem_id}\n"
+                    f"  Created: {self._format_timestamp(session_data.get('created_at'))}\n"
+                    f"  Status: {session_data.get('status', 'Unknown')}"
+                )
                 logger.info(line)
                 # For a list of strings, we can split the multi-line f-string or add individual components
                 output_lines.append(f"Session ID: {session_data.get('session_id')}")
-                output_lines.append(f"  Problem: {session_data.get('problem_id', session_data.get('metadata', {}).get('problem_id', 'Unknown'))}")
+                output_lines.append(f"  Problem: {session_data.get('metadata', {}).get('problem_id') or session_data.get('problem_id', 'Unknown')}")
                 output_lines.append(f"  Created: {self._format_timestamp(session_data.get('created_at'))}")
                 output_lines.append(f"  Status: {session_data.get('status', 'Unknown')}")
-                output_lines.append("") # Add a blank line for separation
+                output_lines.append("")  # Add a blank line for separation
 
         return output_lines

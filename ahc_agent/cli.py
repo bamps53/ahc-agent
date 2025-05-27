@@ -7,27 +7,27 @@ This module provides the main CLI entrypoint for the AHCAgent CLI tool.
 # Standard library imports
 import asyncio
 import logging
-import os # For Path.cwd() in init if workspace is not provided
+import os  # For Path.cwd() in init if workspace is not provided
 from pathlib import Path
 
 # Third-party imports
 import click
-# import yaml # No longer directly used in cli.py for ahc_config.yaml or batch_config.yaml
 
+# import yaml # No longer directly used in cli.py for ahc_config.yaml or batch_config.yaml
 # Local application/library specific imports
 from .config import Config
-from .core.knowledge import KnowledgeBase # Still needed for some commands to instantiate
-from .utils.docker_manager import DockerManager
-from .utils.llm import LLMClient
-from .utils.logging import setup_logging
-# from .utils.scraper import scrape_and_setup_problem # Moved to InitService
+from .core.knowledge import KnowledgeBase  # Still needed for some commands to instantiate
+from .services.batch_service import BatchService
 
+# from .utils.scraper import scrape_and_setup_problem # Moved to InitService
 # Import services
 from .services.init_service import InitService
 from .services.solve_service import SolveService
 from .services.status_service import StatusService
 from .services.submit_service import SubmitService
-from .services.batch_service import BatchService
+from .utils.docker_manager import DockerManager
+from .utils.llm import LLMClient
+from .utils.logging import setup_logging
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -47,19 +47,15 @@ def cli(ctx, config_path_option, verbose, quiet, no_docker):
     log_level = "DEBUG" if verbose else "ERROR" if quiet else "INFO"
     setup_logging(level=log_level)
 
-    cfg = Config(config_path_option) # config_path_option can be None, Config handles it
+    cfg = Config(config_path_option)  # config_path_option can be None, Config handles it
 
     if no_docker:
         cfg.set("docker.enabled", False)
 
-    llm_client = LLMClient(cfg.get("llm", {})) # Pass LLM config section
-    docker_manager = DockerManager(cfg.get("docker", {})) # Pass Docker config section
-    
-    ctx.obj = {
-        "config": cfg,
-        "llm_client": llm_client,
-        "docker_manager": docker_manager
-    }
+    llm_client = LLMClient(cfg.get("llm", {}))  # Pass LLM config section
+    docker_manager = DockerManager(cfg.get("docker", {}))  # Pass Docker config section
+
+    ctx.obj = {"config": cfg, "llm_client": llm_client, "docker_manager": docker_manager}
     logger.debug("CLI initialized with services.")
 
 
@@ -98,7 +94,7 @@ def init(ctx, template, docker_image, workspace, contest_id):
         ctx.exit(1)
     except Exception as e:
         click.secho(f"An unexpected error occurred: {e}", fg="red")
-        logger.exception("Unexpected error in init command.") # Log stack trace for unexpected errors
+        logger.exception("Unexpected error in init command.")  # Log stack trace for unexpected errors
         ctx.exit(1)
 
 
@@ -118,7 +114,7 @@ def solve(ctx, workspace, session_id_option, time_limit, generations, population
     llm_client = ctx.obj["llm_client"]
     docker_manager = ctx.obj["docker_manager"]
     # Global config is in ctx.obj["config"], but for solve, we load workspace-specific config.
-    
+
     workspace_path = Path(workspace)
     problem_file_path = workspace_path / "problem.md"
     config_file_path = workspace_path / "ahc_config.yaml"
@@ -134,7 +130,7 @@ def solve(ctx, workspace, session_id_option, time_limit, generations, population
         # Load workspace-specific config for this solve session
         # This config instance will be passed to SolveService
         ws_config = Config(str(config_file_path))
-        ws_config.set("workspace.base_dir", str(workspace_path)) # Ensure base_dir points to the active workspace
+        ws_config.set("workspace.base_dir", str(workspace_path))  # Ensure base_dir points to the active workspace
     except Exception as e:
         click.secho(f"Error loading config from '{config_file_path}': {e}", fg="red")
         ctx.exit(1)
@@ -151,7 +147,7 @@ def solve(ctx, workspace, session_id_option, time_limit, generations, population
         ws_config.set("evolution.population_size", population_size)
 
     try:
-        with open(problem_file_path, "r", encoding="utf-8") as f:
+        with open(problem_file_path, encoding="utf-8") as f:
             problem_text = f.read()
     except Exception as e:
         click.secho(f"Error reading problem file '{problem_file_path}': {e}", fg="red")
@@ -161,20 +157,16 @@ def solve(ctx, workspace, session_id_option, time_limit, generations, population
     # The contest_id in ahc_config.yaml should be the definitive problem_id for KB.
     problem_id_for_kb = ws_config.get("contest_id")
     if not problem_id_for_kb:
-        problem_id_for_kb = workspace_path.name # Fallback
+        problem_id_for_kb = workspace_path.name  # Fallback
         logger.warning(f"'contest_id' not found in {config_file_path}, using workspace name '{problem_id_for_kb}' as problem_id for KnowledgeBase.")
-        ws_config.set("contest_id", problem_id_for_kb) # Also update config for service if it relies on it
+        ws_config.set("contest_id", problem_id_for_kb)  # Also update config for service if it relies on it
 
     try:
         knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
         solve_service = SolveService(llm_client, docker_manager, ws_config, knowledge_base)
-        
+
         # run_solve_session handles both non-interactive and dispatching to interactive
-        asyncio.run(solve_service.run_solve_session(
-            problem_text=problem_text, 
-            session_id=session_id_option, 
-            interactive=interactive
-        ))
+        asyncio.run(solve_service.run_solve_session(problem_text=problem_text, session_id=session_id_option, interactive=interactive))
     except Exception as e:
         click.secho(f"An error occurred during the solve process: {e}", fg="red")
         logger.exception("Unexpected error in solve command.")
@@ -182,7 +174,7 @@ def solve(ctx, workspace, session_id_option, time_limit, generations, population
 
 
 @cli.command()
-@click.argument("session_id_arg", metavar="SESSION_ID", required=False) # Renamed to avoid clash
+@click.argument("session_id_arg", metavar="SESSION_ID", required=False)  # Renamed to avoid clash
 @click.option("--watch", "-w", is_flag=True, help="Watch status updates continuously.")
 @click.pass_context
 def status(ctx, session_id_arg, watch):
@@ -190,16 +182,18 @@ def status(ctx, session_id_arg, watch):
     Show session status. If SESSION_ID is not provided, lists all sessions
     within the current problem's workspace context.
     """
-    global_config = ctx.obj["config"] # Use the global config for status context
-    
+    global_config = ctx.obj["config"]  # Use the global config for status context
+
     # Determine workspace_dir for KnowledgeBase. This should be the specific problem's workspace.
     # The user is expected to be in or target a problem workspace for 'status'.
     workspace_dir_str = global_config.get("workspace.base_dir")
     if not workspace_dir_str:
-        click.secho("Error: 'workspace.base_dir' is not defined in the global configuration. "
-                    "Cannot determine context for status.", fg="red")
+        click.secho(
+            "Error: 'workspace.base_dir' is not defined in the global configuration. Cannot determine context for status.",
+            fg="red",
+        )
         ctx.exit(1)
-        
+
     workspace_path = Path(workspace_dir_str).resolve()
     if not workspace_path.is_dir():
         click.secho(f"Error: Workspace directory '{workspace_path}' does not exist or is not a directory.", fg="red")
@@ -207,22 +201,22 @@ def status(ctx, session_id_arg, watch):
 
     # Determine problem_id for KnowledgeBase from the workspace path.
     # This assumes workspace.base_dir in global config points to a specific problem's directory.
-    problem_id_for_kb = workspace_path.name 
-    
+    problem_id_for_kb = workspace_path.name
+
     try:
         # KnowledgeBase needs workspace path and problem_id.
         knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
-        status_service = StatusService(global_config, knowledge_base) # Pass global_config
-        
+        status_service = StatusService(global_config, knowledge_base)  # Pass global_config
+
         status_lines = status_service.get_status(session_id=session_id_arg, watch=watch)
-        
+
         # get_status already logs, but we can echo the final output here if not in watch mode
         # or if it's a summary. The service returns lines, so we print them.
-        if not watch or not session_id_arg: # Avoid redundant printing if watch is active for a single session
+        if not watch or not session_id_arg:  # Avoid redundant printing if watch is active for a single session
             for line in status_lines:
                 click.echo(line)
 
-    except ValueError as e: # Catch errors like session not found
+    except ValueError as e:  # Catch errors like session not found
         click.secho(str(e), fg="red")
         ctx.exit(1)
     except Exception as e:
@@ -232,19 +226,21 @@ def status(ctx, session_id_arg, watch):
 
 
 @cli.command()
-@click.argument("session_id_arg", metavar="SESSION_ID") # Renamed
+@click.argument("session_id_arg", metavar="SESSION_ID")  # Renamed
 @click.option("--output", "-o", "output_path_option", type=click.Path(), help="Output file path for the solution code.")
 @click.pass_context
 def submit(ctx, session_id_arg, output_path_option):
     """
     Submit the best solution from a session.
     """
-    global_config = ctx.obj["config"] # Use global config for submit context
+    global_config = ctx.obj["config"]  # Use global config for submit context
 
     workspace_dir_str = global_config.get("workspace.base_dir")
     if not workspace_dir_str:
-        click.secho("Error: 'workspace.base_dir' is not defined in the global configuration. "
-                    "Cannot determine context for submission.", fg="red")
+        click.secho(
+            "Error: 'workspace.base_dir' is not defined in the global configuration. Cannot determine context for submission.",
+            fg="red",
+        )
         ctx.exit(1)
 
     workspace_path = Path(workspace_dir_str).resolve()
@@ -256,7 +252,7 @@ def submit(ctx, session_id_arg, output_path_option):
     # This assumes the global workspace.base_dir is the root of a specific contest/problem.
     # If ahc_config.yaml exists in this workspace_path, try to get contest_id from it.
     problem_specific_config_path = workspace_path / "ahc_config.yaml"
-    problem_id_for_kb = workspace_path.name # Default/fallback
+    problem_id_for_kb = workspace_path.name  # Default/fallback
     if problem_specific_config_path.exists():
         try:
             problem_cfg = Config(str(problem_specific_config_path))
@@ -266,15 +262,16 @@ def submit(ctx, session_id_arg, output_path_option):
             else:
                 logger.warning(f"'contest_id' not found in {problem_specific_config_path}, using directory name '{problem_id_for_kb}' as problem_id.")
         except Exception as e:
-            logger.warning(f"Could not load {problem_specific_config_path} to determine contest_id, using directory name '{problem_id_for_kb}'. Error: {e}")
-
+            logger.warning(
+                f"Could not load {problem_specific_config_path} to determine contest_id, using directory name '{problem_id_for_kb}'. Error: {e}"
+            )
 
     try:
         knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
-        submit_service = SubmitService(global_config, knowledge_base) # Pass global_config
-        
+        submit_service = SubmitService(global_config, knowledge_base)  # Pass global_config
+
         details = submit_service.submit_solution(session_id=session_id_arg, output_path=output_path_option)
-        
+
         if details["output_path"] != "logged_to_console":
             click.echo(f"Best solution for session {details['session_id']} (Score: {details['score']}) written to {details['output_path']}")
         else:
@@ -284,10 +281,10 @@ def submit(ctx, session_id_arg, output_path_option):
             # For now, relying on service logging for the code itself if not written to file.
             click.echo("The solution code has been logged.")
 
-    except ValueError as e: # Specific errors from service (e.g., session/solution not found)
+    except ValueError as e:  # Specific errors from service (e.g., session/solution not found)
         click.secho(str(e), fg="red")
         ctx.exit(1)
-    except RuntimeError as e: # E.g., file writing error
+    except RuntimeError as e:  # E.g., file writing error
         click.secho(str(e), fg="red")
         ctx.exit(1)
     except Exception as e:
@@ -295,16 +292,23 @@ def submit(ctx, session_id_arg, output_path_option):
         logger.exception("Unexpected error in submit command.")
         ctx.exit(1)
 
+
 @cli.command()
 @click.argument("batch_config_path", metavar="BATCH_CONFIG_FILE", type=click.Path(exists=True, dir_okay=False))
 @click.option("--parallel", "-p", "parallel_override", type=int, help="Number of parallel experiment executions (overrides batch config).")
-@click.option("--output-dir", "-o", "output_dir_override", type=click.Path(file_okay=False, writable=True), help="Output directory for batch results (overrides batch config).")
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir_override",
+    type=click.Path(file_okay=False, writable=True),
+    help="Output directory for batch results (overrides batch config).",
+)
 @click.pass_context
 def batch(ctx, batch_config_path, parallel_override, output_dir_override):
     """
     Run batch processing of experiments defined in BATCH_CONFIG_FILE.
     """
-    global_config = ctx.obj["config"] # Global config can provide defaults for batch service
+    global_config = ctx.obj["config"]  # Global config can provide defaults for batch service
     llm_client = ctx.obj["llm_client"]
     docker_manager = ctx.obj["docker_manager"]
 
@@ -317,12 +321,14 @@ def batch(ctx, batch_config_path, parallel_override, output_dir_override):
         if parallel_override is not None:
             click.echo(f"Parallel executions override: {parallel_override}")
 
-        results = asyncio.run(batch_service.run_batch_experiments_service(
-            batch_config_path=batch_config_path,
-            output_dir_override=output_dir_override,
-            parallel_override=parallel_override
-        ))
-        
+        results = asyncio.run(
+            batch_service.run_batch_experiments_service(
+                batch_config_path=batch_config_path,
+                output_dir_override=output_dir_override,
+                parallel_override=parallel_override,
+            )
+        )
+
         click.echo("\nBatch processing completed.")
         # Batch service already logs summary, but we can print a high-level summary here too.
         successful_experiments = sum(1 for r in results if not r.get("error"))
@@ -330,12 +336,11 @@ def batch(ctx, batch_config_path, parallel_override, output_dir_override):
         click.echo(f"Total experiments processed: {len(results)}")
         click.echo(f"  Successful: {successful_experiments}")
         click.echo(f"  Failed: {failed_experiments}")
-        if results: # If there are any results (even errors)
-            summary_file_loc = Path(results[0].get("experiment_dir_path", output_dir_override or ".")).parent / "summary.json"
+        if results:  # If there are any results (even errors)
+            Path(results[0].get("experiment_dir_path", output_dir_override or ".")).parent / "summary.json"
             # Attempt to get the actual summary path from service if possible, or construct best guess
             # The service logs where summary.json is saved.
-            click.echo(f"Detailed results and summary.json are typically in the batch output directory (see logs).")
-
+            click.echo("Detailed results and summary.json are typically in the batch output directory (see logs).")
 
     except Exception as e:
         click.secho(f"An error occurred during batch processing: {e}", fg="red")
@@ -352,23 +357,28 @@ def stop(ctx, session_id):
     Stop a running session (Placeholder - TBD if part of a service or direct KB interaction).
     For now, this directly interacts with KnowledgeBase status update.
     """
-    config = ctx.obj["config"] # Global config
+    config = ctx.obj["config"]  # Global config
     workspace_dir_str = config.get("workspace.base_dir")
     if not workspace_dir_str:
         click.secho("Error: 'workspace.base_dir' not defined. Cannot determine context.", fg="red")
         ctx.exit(1)
-    
+
     workspace_path = Path(workspace_dir_str).resolve()
-    problem_id_for_kb = workspace_path.name # Assuming base_dir is problem specific
+    problem_id_for_kb = workspace_path.name  # Assuming base_dir is problem specific
 
     # Similar to 'submit', determine problem_id more robustly if possible
     problem_specific_config_path = workspace_path / "ahc_config.yaml"
     if problem_specific_config_path.exists():
         try:
             problem_cfg = Config(str(problem_specific_config_path))
-            cfg_contest_id = problem_cfg.get("contest_id")
-            if cfg_contest_id: problem_id_for_kb = cfg_contest_id
-        except Exception: pass # Ignore if cant load, use default
+            try:
+                cfg_contest_id = problem_cfg.get("contest_id")
+                if cfg_contest_id:
+                    problem_id_for_kb = cfg_contest_id
+            except Exception as e:
+                logger.debug(f"Failed to load contest ID from config: {e}")  # Log exception instead of silent pass
+        except Exception as e:
+            logger.debug(f"Failed to load problem config: {e}")  # Log exception instead of silent pass
 
     try:
         knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
@@ -389,23 +399,25 @@ def stop(ctx, session_id):
 # with Config/DockerManager, not necessarily fitting into the problem-solving services.
 # These can be refactored later if a pattern emerges (e.g., a ConfigManagementService).
 
+
 @cli.group()
 @click.pass_context
-def config(ctx): # Renamed variable to avoid conflict with 'config' module
+def config(ctx):  # Renamed variable to avoid conflict with 'config' module
     """Manage agent configuration."""
-    pass
+
 
 @config.command("get")
 @click.argument("key")
 @click.pass_context
 def config_get(ctx, key):
     """Get a configuration value."""
-    app_config = ctx.obj["config"] # Renamed variable
+    app_config = ctx.obj["config"]  # Renamed variable
     value = app_config.get(key)
     if value is None:
         click.echo(f"Configuration key '{key}' not found.")
     else:
         click.echo(f"{key} = {value}")
+
 
 @config.command("set")
 @click.argument("key")
@@ -413,14 +425,19 @@ def config_get(ctx, key):
 @click.pass_context
 def config_set(ctx, key, value):
     """Set a configuration value (in memory, for current session)."""
-    app_config = ctx.obj["config"] # Renamed variable
+    app_config = ctx.obj["config"]  # Renamed variable
     # Basic type conversion, similar to original
-    if value.lower() == "true": value_to_set = True
-    elif value.lower() == "false": value_to_set = False
-    elif value.isdigit(): value_to_set = int(value)
-    elif value.replace(".", "", 1).isdigit() and value.count(".") == 1: value_to_set = float(value)
-    else: value_to_set = value
-    
+    if value.lower() == "true":
+        value_to_set = True
+    elif value.lower() == "false":
+        value_to_set = False
+    elif value.isdigit():
+        value_to_set = int(value)
+    elif value.replace(".", "", 1).isdigit() and value.count(".") == 1:
+        value_to_set = float(value)
+    else:
+        value_to_set = value
+
     try:
         app_config.set(key, value_to_set)
         click.echo(f"Set {key} = {value_to_set} (in memory for this session).")
@@ -429,23 +446,24 @@ def config_set(ctx, key, value):
     except Exception as e:
         click.secho(f"Error setting configuration: {e}", fg="red")
 
+
 # Docker command group remains, uses DockerManager from ctx.obj
 @cli.group()
 @click.pass_context
 def docker(ctx):
     """Manage Docker environment for AHC."""
-    pass
+
 
 @docker.command("setup")
 @click.pass_context
 def docker_setup(ctx):
     """Set up Docker environment (e.g., pull image)."""
     docker_manager = ctx.obj["docker_manager"]
-    click.echo(f"Attempting to pull Docker image: {docker_manager.image_name}") # Corrected to image_name
+    click.echo(f"Attempting to pull Docker image: {docker_manager.image_name}")  # Corrected to image_name
     try:
         # DockerManager.pull_image() was synchronous in the original.
         # If it becomes async, this needs `asyncio.run()`. Assuming sync for now.
-        success = docker_manager.pull_image() 
+        success = docker_manager.pull_image()
         if success:
             click.echo("Docker image pulled successfully (or was already present).")
         else:
@@ -462,14 +480,14 @@ def docker_status(ctx):
     """Show Docker environment status."""
     docker_manager = ctx.obj["docker_manager"]
     try:
-        docker_manager.check_docker_availability() # This raises RuntimeError if unavailable
+        docker_manager.check_docker_availability()  # This raises RuntimeError if unavailable
         click.echo("Docker is available.")
-        
+
         # Test command execution
         # Assuming current directory is a safe workspace for test.
         # DockerManager.run_command() was synchronous.
         result = docker_manager.run_command("echo 'Docker test successful'", os.getcwd())
-        if result and result.get("success"): # Check if result is not None
+        if result and result.get("success"):  # Check if result is not None
             click.echo(f"Docker test command successful. Output: {result.get('stdout', '').strip()}")
         elif result:
             click.secho(f"Docker test command failed. Error: {result.get('stderr', 'Unknown error')}", fg="red")
@@ -482,11 +500,13 @@ def docker_status(ctx):
         click.secho(f"An unexpected error occurred while checking Docker status: {e}", fg="red")
         logger.exception("Error in docker status command.")
 
+
 def main():
     """
     Main entry point.
     """
-    cli(obj={}) # obj is initialized by Click context
+    cli(obj={})  # obj is initialized by Click context
+
 
 if __name__ == "__main__":
     main()

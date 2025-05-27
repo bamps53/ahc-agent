@@ -78,10 +78,7 @@ class EvolutionaryEngine:
         logger.info("Starting evolutionary process")
 
         # Ensure workspace directory exists
-        if workspace_dir:
-            workspace_dir = ensure_directory(workspace_dir)
-        else:
-            workspace_dir = ensure_directory(os.path.join(os.getcwd(), "workspace"))
+        workspace_dir = ensure_directory(workspace_dir) if workspace_dir else ensure_directory(os.path.join(os.getcwd(), "workspace"))
 
         # Initialize evolution log
         evolution_log = {
@@ -434,9 +431,7 @@ class EvolutionaryEngine:
                 logger.warning("No parents available for crossover or mutation, attempting to generate new initial solution.")
                 # Attempt to generate a new initial solution as a fallback
                 # This assumes _generate_initial_solution can be called here
-                new_initial_solution = await self._generate_initial_solution(
-                    problem_analysis, solution_strategy, solution_id_counter, workspace_dir
-                )
+                new_initial_solution = await self._generate_initial_solution(problem_analysis, solution_strategy, solution_id_counter, workspace_dir)
                 if new_initial_solution:
                     offspring.append(new_initial_solution)
                 solution_id_counter += 1

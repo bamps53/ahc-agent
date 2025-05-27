@@ -1,9 +1,10 @@
 import logging
 import os
 
-from ..utils.docker_manager import DockerManager
+from ahc_agent.utils.docker_manager import DockerManager
 
 logger = logging.getLogger(__name__)
+
 
 class DockerService:
     def __init__(self, docker_manager: DockerManager):
@@ -19,7 +20,7 @@ class DockerService:
         # For now, using self.docker_manager.image as per the example's hint.
         # If DockerManager has `image_name` as the property for the image identifier, that should be used.
         # The example provided `self.docker_manager.image`. I'll stick to that for consistency with the example.
-        image_to_pull = getattr(self.docker_manager, 'image', getattr(self.docker_manager, 'image_name', 'unknown_image_attribute'))
+        image_to_pull = getattr(self.docker_manager, "image", getattr(self.docker_manager, "image_name", "unknown_image_attribute"))
 
         logger.info(f"Attempting to pull Docker image: {image_to_pull}")
         try:
@@ -33,20 +34,16 @@ class DockerService:
         except Exception as e:
             logger.error(f"Exception occurred while pulling Docker image '{image_to_pull}': {e}")
             # Depending on desired behavior, re-raise or return False
-            raise # Re-raising the exception to indicate failure more strongly.
+            raise  # Re-raising the exception to indicate failure more strongly.
 
     def get_status(self) -> dict:
         """
         Checks Docker availability and runs a test command.
         Returns a dictionary with status information.
         """
-        status_report = {
-            "docker_available": False,
-            "test_successful": False,
-            "message": ""
-        }
+        status_report = {"docker_available": False, "test_successful": False, "message": ""}
         try:
-            self.docker_manager.check_docker_availability() # This raises RuntimeError if Docker is not available
+            self.docker_manager.check_docker_availability()  # This raises RuntimeError if Docker is not available
             status_report["docker_available"] = True
             status_report["message"] = "Docker is available."
             logger.info("Docker is available.")
@@ -54,28 +51,28 @@ class DockerService:
             # Run test command. os.getcwd() is a sensible default for work_dir if not specified.
             # The specific command "echo 'Docker test successful'" is from the example.
             test_command_result = self.docker_manager.run_command("echo 'Docker test successful'", os.getcwd())
-            
+
             if test_command_result and test_command_result.get("success"):
                 status_report["test_successful"] = True
                 status_report["message"] += " Docker test command successful."
                 logger.info("Docker test command successful.")
                 if test_command_result.get("stdout"):
-                     logger.debug(f"Test command stdout: {test_command_result.get('stdout')}")
-            elif test_command_result: # Command executed but failed
-                error_message = test_command_result.get('stderr', 'No stderr output.')
+                    logger.debug(f"Test command stdout: {test_command_result.get('stdout')}")
+            elif test_command_result:  # Command executed but failed
+                error_message = test_command_result.get("stderr", "No stderr output.")
                 status_report["test_successful"] = False
                 status_report["message"] += f" Docker test command failed: {error_message}"
                 logger.error(f"Docker test command failed: {error_message}")
-            else: # Result was None or not in expected format
+            else:  # Result was None or not in expected format
                 status_report["test_successful"] = False
                 status_report["message"] += " Docker test command did not return a valid result."
                 logger.error("Docker test command did not return a valid result.")
 
-        except RuntimeError as e: # Specific exception from check_docker_availability
+        except RuntimeError as e:  # Specific exception from check_docker_availability
             logger.error(f"Docker availability check failed: {e!s}")
             status_report["message"] = f"Docker is not available: {e!s}"
             # docker_available and test_successful remain False as initialized
-        except Exception as e: # Catch any other unexpected errors
+        except Exception as e:  # Catch any other unexpected errors
             logger.error(f"An unexpected error occurred during Docker status check: {e!s}")
             status_report["message"] = f"An unexpected error occurred: {e!s}"
             # docker_available and test_successful remain False
@@ -99,4 +96,4 @@ class DockerService:
         except Exception as e:
             logger.error(f"Exception occurred during Docker cleanup: {e}")
             # Depending on desired behavior, re-raise or return False
-            raise # Re-raising the exception to indicate failure more strongly.
+            raise  # Re-raising the exception to indicate failure more strongly.
