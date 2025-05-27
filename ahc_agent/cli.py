@@ -6,29 +6,28 @@ This module provides the main CLI entrypoint for the AHCAgent CLI tool.
 
 # Standard library imports
 import asyncio
-import contextlib
-import json
 import logging
-import os
+import os  # For Path.cwd() in init if workspace is not provided
 from pathlib import Path
-import time
 
 # Third-party imports
 import click
-import yaml
 
+# import yaml # No longer directly used in cli.py for ahc_config.yaml or batch_config.yaml
 # Local application/library specific imports
 from .config import Config
-from .core.analyzer import ProblemAnalyzer
-from .core.debugger import ImplementationDebugger
-from .core.engine import EvolutionaryEngine
-from .core.knowledge import KnowledgeBase
-from .core.problem_logic import ProblemLogic
-from .core.strategist import SolutionStrategist
+from .core.knowledge import KnowledgeBase  # Still needed for some commands to instantiate
+from .services.batch_service import BatchService
+
+# from .utils.scraper import scrape_and_setup_problem # Moved to InitService
+# Import services
+from .services.init_service import InitService
+from .services.solve_service import SolveService
+from .services.status_service import StatusService
+from .services.submit_service import SubmitService
 from .utils.docker_manager import DockerManager
 from .utils.llm import LLMClient
 from .utils.logging import setup_logging
-from .utils.scraper import scrape_and_setup_problem
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -36,1095 +35,386 @@ logger = logging.getLogger(__name__)
 
 # Create Click group
 @click.group()
-@click.option("--config", "-c", type=click.Path(exists=True), help="Path to configuration file")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
-@click.option("--quiet", "-q", is_flag=True, help="Minimize output")
-@click.option("--no-docker", is_flag=True, help="Disable Docker usage")
+@click.option("--config", "-c", "config_path_option", type=click.Path(exists=True), help="Path to configuration file.")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output.")
+@click.option("--quiet", "-q", is_flag=True, help="Minimize output.")
+@click.option("--no-docker", is_flag=True, help="Disable Docker usage.")
 @click.pass_context
-def cli(ctx, config, verbose, quiet, no_docker):
+def cli(ctx, config_path_option, verbose, quiet, no_docker):
     """
     AHCAgent CLI - A tool for solving AtCoder Heuristic Contest problems.
     """
-    # Set up logging
     log_level = "DEBUG" if verbose else "ERROR" if quiet else "INFO"
     setup_logging(level=log_level)
 
-    # Load configuration
-    cfg = Config(config)
+    cfg = Config(config_path_option)  # config_path_option can be None, Config handles it
 
-    # Override configuration with command-line options
     if no_docker:
         cfg.set("docker.enabled", False)
 
-    # Store configuration in context
-    ctx.obj = {"config": cfg}
+    llm_client = LLMClient(cfg.get("llm", {}))  # Pass LLM config section
+    docker_manager = DockerManager(cfg.get("docker", {}))  # Pass Docker config section
 
-    logger.debug("CLI initialized")
+    ctx.obj = {"config": cfg, "llm_client": llm_client, "docker_manager": docker_manager}
+    logger.debug("CLI initialized with services.")
 
 
 @cli.command()
-@click.option("--template", "-t", type=str, help="Template to use")
-@click.option("--docker-image", "-i", type=str, help="Docker image to use")
+@click.option("--template", "-t", type=str, help="Template to use for the project.")
+@click.option("--docker-image", "-i", type=str, help="Docker image to specify in project config.")
 @click.option(
     "--workspace",
     "-w",
     type=click.Path(),
     default=None,
-    help=("Directory to create the project in. If not set, creates a directory named CONTEST_ID in the current location."),
+    help="Directory to create the project in. If not set, creates a directory named CONTEST_ID in the current location.",
 )
 @click.argument("contest_id", type=str, required=True)
 @click.pass_context
 def init(ctx, template, docker_image, workspace, contest_id):
     """
     Initialize a new AHC project.
-    Optionally, provide a CONTEST_ID (e.g., ahc030) to scrape the problem statement.
+    Scrapes problem statement for CONTEST_ID (e.g., ahc030).
     """
     config = ctx.obj["config"]
-
-    # Override configuration with command-line options
-    if template:
-        config.set("template", template)
-
-    if docker_image:
-        config.set("docker.image", docker_image)
-
-    project_dir = Path(workspace).resolve() if workspace else Path.cwd() / contest_id
+    init_service = InitService(config)
 
     try:
-        # project_dir がファイルの場合、mkdirは FileExistsError を送出する
-        project_dir.mkdir(parents=True, exist_ok=False)  # exist_ok=False に変更
-        display_path = project_dir
-        with contextlib.suppress(ValueError):
-            display_path = project_dir.relative_to(Path.cwd())
-        click.echo(f"Initialized AHC project in ./{display_path}")
-
-    except FileExistsError:  # FileExistsError を明示的にキャッチ
-        click.echo(
-            f"Error creating project directory: '{project_dir}' already exists and is a file or non-empty directory.", err=True
+        # The InitService now handles overriding config with template/docker_image options if provided
+        project_info = init_service.initialize_project(
+            contest_id=contest_id,
+            template=template,
+            docker_image=docker_image,
+            workspace=workspace,
         )
+        click.echo(f"Project for contest '{project_info['contest_id']}' initialized successfully in '{project_info['project_dir']}'.")
+        click.echo(f"Config file created at: {project_info['config_file_path']}")
+    except RuntimeError as e:
+        click.secho(f"Error during project initialization: {e}", fg="red")
         ctx.exit(1)
     except Exception as e:
-        click.echo(f"Error creating project directory '{project_dir}': {e}", err=True)
+        click.secho(f"An unexpected error occurred: {e}", fg="red")
+        logger.exception("Unexpected error in init command.")  # Log stack trace for unexpected errors
         ctx.exit(1)
-
-    project_specific_config_data = {
-        "contest_id": contest_id,
-        "template": template if template else config.get("template", "default"),
-        "docker_image": docker_image if docker_image else config.get("docker.image", "ubuntu:latest"),
-    }
-
-    project_config_file_path = project_dir / "ahc_config.yaml"
-    try:
-        with open(project_config_file_path, "w") as f:
-            yaml.dump(project_specific_config_data, f, default_flow_style=False)
-        click.echo(f"Project configuration saved to {project_config_file_path}")
-    except Exception as e:
-        click.echo(f"Error saving project configuration to '{project_config_file_path}': {e}", err=True)
-        return
-
-    problem_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
-    click.echo(f"Attempting to scrape problem from {problem_url}...")
-    try:
-        scrape_and_setup_problem(problem_url, str(project_dir))
-        click.echo(f"Problem scraped and set up successfully in '{project_dir}'.")
-    except Exception as e:
-        click.echo(f"Error during scraping: {e}", err=True)
 
 
 @cli.command()
 @click.argument("workspace", type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True))
-@click.option("--session-id", "-s", type=str, help="Session ID for resuming")
-@click.option("--time-limit", "-t", type=int, help="Time limit in seconds")
-@click.option("--generations", "-g", type=int, help="Maximum number of generations")
-@click.option("--population-size", "-p", type=int, help="Population size")
-@click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
+@click.option("--session-id", "-s", "session_id_option", type=str, help="Session ID for resuming a previous solve session.")
+@click.option("--time-limit", "-t", type=int, help="Override time limit in seconds for evolution.")
+@click.option("--generations", "-g", type=int, help="Override maximum number of generations for evolution.")
+@click.option("--population-size", "-p", type=int, help="Override population size for evolution.")
+@click.option("--interactive", "-i", is_flag=True, help="Enable interactive mode for solving.")
 @click.pass_context
-def solve(ctx, workspace, session_id, time_limit, generations, population_size, interactive):
+def solve(ctx, workspace, session_id_option, time_limit, generations, population_size, interactive):
     """
     Solve a problem in the specified workspace.
     The workspace must contain 'problem.md' and 'ahc_config.yaml'.
     """
+    llm_client = ctx.obj["llm_client"]
+    docker_manager = ctx.obj["docker_manager"]
+    # Global config is in ctx.obj["config"], but for solve, we load workspace-specific config.
+
     workspace_path = Path(workspace)
     problem_file_path = workspace_path / "problem.md"
     config_file_path = workspace_path / "ahc_config.yaml"
 
     if not problem_file_path.exists():
-        click.echo(f"Error: 'problem.md' not found in workspace '{workspace_path}'.", err=True)
+        click.secho(f"Error: 'problem.md' not found in workspace '{workspace_path}'.", fg="red")
         ctx.exit(1)
     if not config_file_path.exists():
-        click.echo(f"Error: 'ahc_config.yaml' not found in workspace '{workspace_path}'.", err=True)
+        click.secho(f"Error: 'ahc_config.yaml' not found in workspace '{workspace_path}'.", fg="red")
         ctx.exit(1)
 
-    # Load configuration specifically from the workspace's ahc_config.yaml
-    # This overrides any globally passed config from the main cli context for this command's scope.
     try:
-        config = Config(str(config_file_path))
-        # Ensure workspace.base_dir in the loaded config points to the provided workspace
-        # This is important if the ahc_config.yaml itself has a different workspace.base_dir
-        config.set("workspace.base_dir", str(workspace_path))
+        # Load workspace-specific config for this solve session
+        # This config instance will be passed to SolveService
+        ws_config = Config(str(config_file_path))
+        ws_config.set("workspace.base_dir", str(workspace_path))  # Ensure base_dir points to the active workspace
     except Exception as e:
-        click.echo(f"Error loading config from '{config_file_path}': {e}", err=True)
+        click.secho(f"Error loading config from '{config_file_path}': {e}", fg="red")
         ctx.exit(1)
 
     click.echo(f"Solving problem in workspace: {workspace_path}")
-    click.echo(f"Using config: {config.config_file_path}")
+    click.echo(f"Using config: {ws_config.config_file_path}")
 
-    # Override loaded configuration with command-line options
+    # Override workspace config with command-line options for evolution parameters
     if time_limit is not None:
-        config.set("evolution.time_limit_seconds", time_limit)
-
+        ws_config.set("evolution.time_limit_seconds", time_limit)
     if generations is not None:
-        config.set("evolution.max_generations", generations)
-
+        ws_config.set("evolution.max_generations", generations)
     if population_size is not None:
-        config.set("evolution.population_size", population_size)
+        ws_config.set("evolution.population_size", population_size)
 
-    # Read problem file
     try:
-        with open(problem_file_path) as f:
+        with open(problem_file_path, encoding="utf-8") as f:
             problem_text = f.read()
     except Exception as e:
-        click.echo(f"Error reading problem file '{problem_file_path}': {e}", err=True)
+        click.secho(f"Error reading problem file '{problem_file_path}': {e}", fg="red")
         ctx.exit(1)
 
-    # Run solver
-    asyncio.run(_solve_problem(config, problem_text, session_id, interactive))
-
-
-async def _solve_problem(config, problem_text, session_id=None, interactive=False):
-    """
-    Solve a problem asynchronously.
-    """
-    # Initialize clients and modules
-    llm_client = LLMClient(config.get("llm"))
-    docker_manager = DockerManager(config.get("docker"))
-    contest_id_from_config = config.get("contest_id")
-    if not contest_id_from_config:
-        # 設定ファイルに contest_id がない場合、ワークスペース名から推測
-        contest_id_from_config = Path(config.get("workspace.base_dir")).name
-        click.echo(
-            f"Warning: 'contest_id' not found in config, using workspace name "
-            f"'{contest_id_from_config}' as problem_id for KnowledgeBase.",
-            err=True,
-        )
-
-    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"), problem_id=contest_id_from_config)
-
-    problem_analyzer = ProblemAnalyzer(llm_client, config.get("analyzer"))
-    solution_strategist = SolutionStrategist(llm_client, config.get("strategist"))
-    evolutionary_engine = EvolutionaryEngine(llm_client, config.get("evolution"))
-    implementation_debugger = ImplementationDebugger(llm_client, docker_manager, config.get("debugger"))
-    problem_logic = ProblemLogic(llm_client, config.get("problem_logic"))
-
-    # Create or get session
-    if session_id:
-        session = knowledge_base.get_session(session_id)
-        if not session:
-            click.echo(f"Session {session_id} not found")
-            return
-
-        click.echo(f"Resuming session {session_id}")
-    else:
-        # Parse problem statement
-        parsed_info = await problem_logic.parse_problem_statement(problem_text)
-
-        # Create session
-        session_id = knowledge_base.create_session(
-            parsed_info.get("title", "unknown"), {"problem_text": problem_text, "parsed_info": parsed_info}
-        )
-
-        click.echo(f"Created session {session_id}")
-
-    # Interactive mode
-    if interactive:
-        await _interactive_solve(
-            session_id,
-            config,
-            knowledge_base,
-            problem_analyzer,
-            solution_strategist,
-            evolutionary_engine,
-            implementation_debugger,
-            problem_logic,
-        )
-        return
-
-    # Non-interactive mode
-    click.echo("Analyzing problem...")
-
-    # Get problem analysis
-    problem_analysis = knowledge_base.get_problem_analysis(session_id)
-    if not problem_analysis:
-        # Analyze problem
-        problem_analysis = await problem_analyzer.analyze(problem_text)
-
-        # Save problem analysis
-        knowledge_base.save_problem_analysis(session_id, problem_analysis)
-
-    click.echo("Developing solution strategy...")
-
-    # Get solution strategy
-    solution_strategy = knowledge_base.get_solution_strategy(session_id)
-    if not solution_strategy:
-        # Develop solution strategy
-        solution_strategy = await solution_strategist.develop_strategy(problem_analysis)
-
-        # Save solution strategy
-        knowledge_base.save_solution_strategy(session_id, solution_strategy)
-
-    click.echo("Generating initial solution...")
-
-    # Get best solution or generate initial solution
-    best_solution = knowledge_base.get_best_solution(session_id)
-    initial_solution = (
-        best_solution.get("code") if best_solution else await problem_logic.generate_initial_solution(problem_analysis)
-    )
-
-    # Generate test cases from tools/in/*.txt
-    click.echo("Loading test cases from tools/in/...")
-    tools_in_dir = Path(config.get("workspace.base_dir")) / "tools" / "in"
-    test_cases = []
-    if tools_in_dir.exists() and tools_in_dir.is_dir():
-        for test_file in sorted(tools_in_dir.glob("*.txt")):
-            with open(test_file) as f:
-                test_cases.append({"name": test_file.name, "input": f.read()})
-
-    if not test_cases:
-        click.echo("No test cases found in tools/in/. Generating fallback test cases...")
-        # Fallback to generating test cases if none are found in tools/in/
-        # Ensure this returns list of dicts with 'input' and 'name'
-        test_cases = await problem_logic.generate_test_cases(problem_analysis, 3)
-    else:
-        click.echo(f"Loaded {len(test_cases)} test cases from tools/in/")
-
-    # Create score calculator
-    score_calculator = await problem_logic.create_score_calculator(problem_analysis)
-
-    # Define evaluation function
-    def evaluate_solution(code, current_test_cases, current_score_calculator):
-        total_score = 0
-        details = {}
-
-        for test_case in current_test_cases:  # No need for i
-            result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
-            test_name = test_case.get("name", f"test_{current_test_cases.index(test_case) + 1}")  # Use name if available
-
-            if result["success"]:
-                score = current_score_calculator(test_case["input"], result["execution_output"])
-                total_score += score
-                details[test_name] = {"score": score, "execution_time": result["execution_time"]}
-            else:
-                details[test_name] = {
-                    "error": result["compilation_errors"] or result["execution_errors"],
-                    "score": 0,
-                }
-
-        avg_score = total_score / len(current_test_cases) if current_test_cases else 0
-        return avg_score, details
-
-    # Run evolutionary process
-    click.echo("Running evolutionary process...")
-    result = await evolutionary_engine.evolve(
-        problem_analysis,
-        solution_strategy,
-        initial_solution,
-        lambda code: evaluate_solution(code, test_cases, score_calculator),
-        os.path.join(config.get("workspace.base_dir"), "sessions", session_id),
-    )
-
-    # Save evolution log
-    knowledge_base.save_evolution_log(session_id, result["evolution_log"])
-
-    # Save best solution
-    knowledge_base.save_solution(
-        session_id,
-        "best",
-        {"code": result["best_solution"], "score": result["best_score"], "generation": result["generations_completed"]},
-    )
-
-    click.echo(f"Evolution complete: {result['generations_completed']} generations")
-    click.echo(f"Best score: {result['best_score']}")
-    best_solution_path = os.path.join(config.get("workspace.base_dir"), "sessions", session_id, "solutions", "best.cpp")
-    click.echo(f"Best solution saved to {best_solution_path}")
-
-
-async def _interactive_solve(
-    session_id,
-    config,
-    knowledge_base,
-    problem_analyzer,
-    solution_strategist,
-    evolutionary_engine,
-    implementation_debugger,
-    problem_logic,
-):
-    """
-    Interactive problem solving.
-    """
-    # Get session
-    session = knowledge_base.get_session(session_id)
-    if not session:
-        click.echo(f"Session {session_id} not found")
-        return
-
-    # Get problem text
-    problem_text = session.get("problem_text")
-    if not problem_text:
-        click.echo("Problem text not found in session")
-        return
-
-    # Get workspace directory
-    workspace_dir = config.get("workspace.base_dir")
-    workspace_dir = os.path.expanduser(workspace_dir)
-
-    # Interactive loop
-    running = True
-    current_step = "init"
-
-    # State variables
-    problem_analysis = None
-    solution_strategy = None
-    test_cases = None
-    score_calculator = None
-    evolution_result = None
-
-    while running:
-        if current_step == "init":
-            click.echo("\n=== AHCAgent Interactive Mode ===")
-            click.echo(f"Session: {session_id}")
-            click.echo(f"Problem: {session.get('problem_id', 'Unknown')}")
-            click.echo("\nAvailable commands:")
-            click.echo("  analyze - Analyze the problem")
-            click.echo("  strategy - Develop solution strategy")
-            click.echo("  testcases - Generate test cases")
-            click.echo("  initial - Generate initial solution")
-            click.echo("  evolve - Run evolutionary process")
-            click.echo("  status - Show current status")
-            click.echo("  help - Show this help")
-            click.echo("  exit - Exit interactive mode")
-
-            current_step = "command"
-
-        elif current_step == "command":
-            command = click.prompt("\nEnter command", type=str).strip().lower()
-
-            if command == "exit":
-                running = False
-
-            elif command == "help":
-                current_step = "init"
-
-            elif command == "status":
-                click.echo("\n=== Current Status ===")
-                click.echo(f"Session: {session_id}")
-                click.echo(f"Problem: {session.get('problem_id', 'Unknown')}")
-                problem_analysis_exists = problem_analysis or knowledge_base.get_problem_analysis(session_id)
-                problem_analysis_status = "Complete" if problem_analysis_exists else "Not started"
-                click.echo(f"Problem Analysis: {problem_analysis_status}")
-                solution_strategy_exists = solution_strategy or knowledge_base.get_solution_strategy(session_id)
-                solution_strategy_status = "Complete" if solution_strategy_exists else "Not started"
-                click.echo(f"Solution Strategy: {solution_strategy_status}")
-                click.echo(f"Test Cases: {'Generated' if test_cases else 'Not generated'}")
-
-                # Show best solution if available
-                best_solution = knowledge_base.get_best_solution(session_id)
-                if best_solution:
-                    click.echo(f"Best Score: {best_solution.get('score', 'Unknown')}")
-
-            elif command == "analyze":
-                click.echo("\nAnalyzing problem...")
-
-                # Get problem analysis from knowledge base or analyze
-                problem_analysis = knowledge_base.get_problem_analysis(session_id)
-                if not problem_analysis:
-                    problem_analysis = await problem_analyzer.analyze(problem_text)
-                    knowledge_base.save_problem_analysis(session_id, problem_analysis)
-
-                click.echo("Problem analysis complete")
-                click.echo(f"Title: {problem_analysis.get('title', 'Unknown')}")
-                click.echo(f"Characteristics: {problem_analysis.get('characteristics', {}).get('problem_type', 'Unknown')}")
-
-                # Show effective algorithms
-                effective_algorithms = problem_analysis.get("characteristics", {}).get("effective_algorithms", [])
-                if effective_algorithms:
-                    click.echo("Effective Algorithms:")
-                    for algo in effective_algorithms:
-                        click.echo(f"  - {algo}")
-
-            elif command == "strategy":
-                if not problem_analysis:
-                    problem_analysis = knowledge_base.get_problem_analysis(session_id)
-                    if not problem_analysis:
-                        click.echo("Please analyze the problem first")
-                        continue
-
-                click.echo("\nDeveloping solution strategy...")
-
-                # Get solution strategy from knowledge base or develop
-                solution_strategy = knowledge_base.get_solution_strategy(session_id)
-                if not solution_strategy:
-                    solution_strategy = await solution_strategist.develop_strategy(problem_analysis)
-                    knowledge_base.save_solution_strategy(session_id, solution_strategy)
-
-                click.echo("Solution strategy development complete")
-                click.echo(f"Approach: {solution_strategy.get('high_level_strategy', {}).get('approach', 'Unknown')}")
-
-                # Show key insights
-                key_insights = solution_strategy.get("high_level_strategy", {}).get("key_insights", [])
-                if key_insights:
-                    click.echo("Key Insights:")
-                    for insight in key_insights:
-                        click.echo(f"  - {insight}")
-
-                # Show main algorithm
-                main_algo = solution_strategy.get("algorithm_selection", {}).get("main_algorithm", {})
-                if main_algo:
-                    click.echo(f"Main Algorithm: {main_algo.get('name', 'Unknown')}")
-                    click.echo(f"Suitability: {main_algo.get('suitability', 'Unknown')}")
-
-            elif command == "testcases":
-                if not problem_analysis:
-                    problem_analysis = knowledge_base.get_problem_analysis(session_id)
-                    if not problem_analysis:
-                        click.echo("Please analyze the problem first")
-                        continue
-
-                num_cases = click.prompt("Number of test cases to generate", type=int, default=3)
-
-                click.echo(f"\nGenerating {num_cases} test cases...")
-                test_cases = await problem_logic.generate_test_cases(problem_analysis, num_cases)
-
-                click.echo(f"Generated {len(test_cases)} test cases")
-
-                # Create score calculator
-                click.echo("Creating score calculator...")
-                score_calculator = await problem_logic.create_score_calculator(problem_analysis)
-
-                click.echo("Score calculator created")
-
-            elif command == "initial":
-                if not problem_analysis:
-                    problem_analysis = knowledge_base.get_problem_analysis(session_id)
-                    if not problem_analysis:
-                        click.echo("Please analyze the problem first")
-                        continue
-
-                click.echo("\nGenerating initial solution...")
-                initial_solution = await problem_logic.generate_initial_solution(problem_analysis)
-
-                # Save initial solution
-                knowledge_base.save_solution(
-                    session_id,
-                    "initial",
-                    {"code": initial_solution, "score": 0, "generation": 0},
-                )
-
-                click.echo("Initial solution generated and saved")
-
-                # Show initial solution
-                if click.confirm("Show initial solution?"):
-                    click.echo("\n=== Initial Solution ===")
-                    click.echo(initial_solution)
-
-            elif command == "evolve":
-                if not problem_analysis:
-                    problem_analysis = knowledge_base.get_problem_analysis(session_id)
-                    if not problem_analysis:
-                        click.echo("Please analyze the problem first")
-                        continue
-
-                if not solution_strategy:
-                    solution_strategy = knowledge_base.get_solution_strategy(session_id)
-                    if not solution_strategy:
-                        click.echo("Please develop solution strategy first")
-                        continue
-
-                if not test_cases:
-                    num_cases = click.prompt("Number of test cases to generate", type=int, default=3)
-                    click.echo(f"\nGenerating {num_cases} test cases...")
-                    test_cases = await problem_logic.generate_test_cases(problem_analysis, num_cases)
-                    click.echo(f"Generated {len(test_cases)} test cases")
-
-                if not score_calculator:
-                    click.echo("Creating score calculator...")
-                    score_calculator = await problem_logic.create_score_calculator(problem_analysis)
-                    click.echo("Score calculator created")
-
-                # Get best solution or initial solution
-                best_solution = knowledge_base.get_best_solution(session_id)
-                if best_solution:
-                    initial_code = best_solution.get("code")
-                    click.echo(f"Using best solution (score: {best_solution.get('score', 'Unknown')}) as starting point")
-                else:
-                    # Get initial solution or generate
-                    initial_solution = knowledge_base.get_solution(session_id, "initial")
-                    if initial_solution:
-                        initial_code = initial_solution.get("code")
-                        click.echo("Using saved initial solution as starting point")
-                    else:
-                        click.echo("Generating initial solution...")
-                        initial_code = await problem_logic.generate_initial_solution(problem_analysis)
-                        click.echo("Initial solution generated")
-
-                # Configure evolution parameters
-                max_generations = click.prompt(
-                    "Maximum generations", type=int, default=config.get("evolution.max_generations", 30)
-                )
-                population_size = click.prompt("Population size", type=int, default=config.get("evolution.population_size", 10))
-                time_limit = click.prompt(
-                    "Time limit (seconds)", type=int, default=config.get("evolution.time_limit_seconds", 1800)
-                )
-
-                # Update configuration
-                config.set("evolution.max_generations", max_generations)
-                config.set("evolution.population_size", population_size)
-                config.set("evolution.time_limit_seconds", time_limit)
-
-                # Configure evolutionary engine
-                evolutionary_engine.max_generations = max_generations
-                evolutionary_engine.population_size = population_size
-                evolutionary_engine.time_limit_seconds = time_limit
-
-                # Define evaluation function
-                def evaluate_solution(code):
-                    total_score = 0
-                    details = {}
-
-                    for test_case in test_cases:
-                        result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
-                        test_name = test_case.get("name", f"test_{test_cases.index(test_case) + 1}")  # Use name if available
-
-                        if result["success"]:
-                            score = score_calculator(test_case["input"], result["execution_output"])
-                            total_score += score
-                            details[test_name] = {"score": score, "execution_time": result["execution_time"]}
-                        else:
-                            details[test_name] = {
-                                "error": result["compilation_errors"] or result["execution_errors"],
-                                "score": 0,
-                            }
-
-                    avg_score = total_score / len(test_cases) if test_cases else 0
-                    return avg_score, details
-
-                # Run evolutionary process
-                click.echo("\nRunning evolutionary process...")
-                click.echo(f"Max generations: {max_generations}")
-                click.echo(f"Population size: {population_size}")
-                click.echo(f"Time limit: {time_limit} seconds")
-
-                evolution_result = await evolutionary_engine.evolve(
-                    problem_analysis,
-                    solution_strategy,
-                    initial_code,
-                    evaluate_solution,
-                    os.path.join(config.get("workspace.base_dir"), "sessions", session_id),
-                )
-
-                # Save evolution log
-                knowledge_base.save_evolution_log(session_id, evolution_result["evolution_log"])
-
-                # Save best solution
-                knowledge_base.save_solution(
-                    session_id,
-                    "best",
-                    {
-                        "code": evolution_result["best_solution"],
-                        "score": evolution_result["best_score"],
-                        "generation": evolution_result["generations_completed"],
-                    },
-                )
-
-                click.echo(f"\nEvolution complete: {evolution_result['generations_completed']} generations")
-                click.echo(f"Best score: {evolution_result['best_score']}")
-
-                # Show best solution
-                if click.confirm("Show best solution?"):
-                    click.echo("\n=== Best Solution ===")
-                    click.echo(evolution_result["best_solution"])
-
-            else:
-                click.echo(f"Unknown command: {command}")
+    # Determine problem_id for KnowledgeBase: from ws_config, or fallback to workspace directory name
+    # The contest_id in ahc_config.yaml should be the definitive problem_id for KB.
+    problem_id_for_kb = ws_config.get("contest_id")
+    if not problem_id_for_kb:
+        problem_id_for_kb = workspace_path.name  # Fallback
+        logger.warning(f"'contest_id' not found in {config_file_path}, using workspace name '{problem_id_for_kb}' as problem_id for KnowledgeBase.")
+        ws_config.set("contest_id", problem_id_for_kb)  # Also update config for service if it relies on it
+
+    try:
+        knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
+        solve_service = SolveService(llm_client, docker_manager, ws_config, knowledge_base)
+
+        # run_solve_session handles both non-interactive and dispatching to interactive
+        asyncio.run(solve_service.run_solve_session(problem_text=problem_text, session_id=session_id_option, interactive=interactive))
+    except Exception as e:
+        click.secho(f"An error occurred during the solve process: {e}", fg="red")
+        logger.exception("Unexpected error in solve command.")
+        ctx.exit(1)
 
 
 @cli.command()
-@click.argument("session_id", required=False)
-@click.option("--watch", "-w", is_flag=True, help="Watch status updates")
+@click.argument("session_id_arg", metavar="SESSION_ID", required=False)  # Renamed to avoid clash
+@click.option("--watch", "-w", is_flag=True, help="Watch status updates continuously.")
 @click.pass_context
-def status(ctx, session_id, watch):
+def status(ctx, session_id_arg, watch):
     """
-    Show session status.
+    Show session status. If SESSION_ID is not provided, lists all sessions
+    within the current problem's workspace context.
     """
-    config = ctx.obj["config"]
+    global_config = ctx.obj["config"]  # Use the global config for status context
 
-    # Get workspace directory
-    workspace_dir = config.get("workspace.base_dir")
-    workspace_dir = os.path.expanduser(workspace_dir)
+    # Determine workspace_dir for KnowledgeBase. This should be the specific problem's workspace.
+    # The user is expected to be in or target a problem workspace for 'status'.
+    workspace_dir_str = global_config.get("workspace.base_dir")
+    if not workspace_dir_str:
+        click.secho(
+            "Error: 'workspace.base_dir' is not defined in the global configuration. Cannot determine context for status.",
+            fg="red",
+        )
+        ctx.exit(1)
 
-    # Initialize knowledge base
-    knowledge_base = KnowledgeBase(workspace_dir)
+    workspace_path = Path(workspace_dir_str).resolve()
+    if not workspace_path.is_dir():
+        click.secho(f"Error: Workspace directory '{workspace_path}' does not exist or is not a directory.", fg="red")
+        ctx.exit(1)
 
-    if session_id:
-        # Show single session status
-        session = knowledge_base.get_session(session_id)
-        if not session:
-            click.echo(f"Session {session_id} not found")
-            return
+    # Determine problem_id for KnowledgeBase from the workspace path.
+    # This assumes workspace.base_dir in global config points to a specific problem's directory.
+    problem_id_for_kb = workspace_path.name
 
-        _show_session_status(session, knowledge_base)
+    try:
+        # KnowledgeBase needs workspace path and problem_id.
+        knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
+        status_service = StatusService(global_config, knowledge_base)  # Pass global_config
 
-        if watch:
-            click.echo("\nWatching for updates (Ctrl+C to stop)...")
-            try:
-                while True:
-                    import time
+        status_lines = status_service.get_status(session_id=session_id_arg, watch=watch)
 
-                    time.sleep(5)
+        # get_status already logs, but we can echo the final output here if not in watch mode
+        # or if it's a summary. The service returns lines, so we print them.
+        if not watch or not session_id_arg:  # Avoid redundant printing if watch is active for a single session
+            for line in status_lines:
+                click.echo(line)
 
-                    session = knowledge_base.get_session(session_id)
-                    if session:
-                        _show_session_status(session, knowledge_base)
-            except KeyboardInterrupt:
-                click.echo("\nStopped watching")
-    else:
-        # List all sessions
-        sessions = knowledge_base.list_sessions()
-
-        if not sessions:
-            click.echo("No sessions found")
-            return
-
-        click.echo(f"Found {len(sessions)} sessions:")
-
-        for session in sessions:
-            click.echo(f"\nSession ID: {session.get('session_id')}")
-            click.echo(f"Problem: {session.get('problem_id', 'Unknown')}")
-            click.echo(f"Created: {_format_timestamp(session.get('created_at'))}")
-            click.echo(f"Status: {session.get('status', 'Unknown')}")
+    except ValueError as e:  # Catch errors like session not found
+        click.secho(str(e), fg="red")
+        ctx.exit(1)
+    except Exception as e:
+        click.secho(f"An unexpected error occurred while fetching status: {e}", fg="red")
+        logger.exception("Unexpected error in status command.")
+        ctx.exit(1)
 
 
-def _show_session_status(session, knowledge_base):
+@cli.command()
+@click.argument("session_id_arg", metavar="SESSION_ID")  # Renamed
+@click.option("--output", "-o", "output_path_option", type=click.Path(), help="Output file path for the solution code.")
+@click.pass_context
+def submit(ctx, session_id_arg, output_path_option):
     """
-    Show detailed session status.
+    Submit the best solution from a session.
     """
-    session_id = session.get("session_id")
+    global_config = ctx.obj["config"]  # Use global config for submit context
 
-    click.echo("\n=== Session Status ===")
-    click.echo(f"Session ID: {session_id}")
-    click.echo(f"Problem: {session.get('problem_id', 'Unknown')}")
-    click.echo(f"Created: {_format_timestamp(session.get('created_at'))}")
-    click.echo(f"Updated: {_format_timestamp(session.get('updated_at'))}")
-    click.echo(f"Status: {session.get('status', 'Unknown')}")
+    workspace_dir_str = global_config.get("workspace.base_dir")
+    if not workspace_dir_str:
+        click.secho(
+            "Error: 'workspace.base_dir' is not defined in the global configuration. Cannot determine context for submission.",
+            fg="red",
+        )
+        ctx.exit(1)
 
-    # Check for problem analysis
-    problem_analysis = knowledge_base.get_problem_analysis(session_id)
-    click.echo(f"Problem Analysis: {'Complete' if problem_analysis else 'Not started'}")
+    workspace_path = Path(workspace_dir_str).resolve()
+    if not workspace_path.is_dir():
+        click.secho(f"Error: Workspace directory '{workspace_path}' does not exist or is not a directory.", fg="red")
+        ctx.exit(1)
 
-    # Check for solution strategy
-    solution_strategy = knowledge_base.get_solution_strategy(session_id)
-    click.echo(f"Solution Strategy: {'Complete' if solution_strategy else 'Not started'}")
+    # Determine problem_id for KnowledgeBase
+    # This assumes the global workspace.base_dir is the root of a specific contest/problem.
+    # If ahc_config.yaml exists in this workspace_path, try to get contest_id from it.
+    problem_specific_config_path = workspace_path / "ahc_config.yaml"
+    problem_id_for_kb = workspace_path.name  # Default/fallback
+    if problem_specific_config_path.exists():
+        try:
+            problem_cfg = Config(str(problem_specific_config_path))
+            cfg_contest_id = problem_cfg.get("contest_id")
+            if cfg_contest_id:
+                problem_id_for_kb = cfg_contest_id
+            else:
+                logger.warning(f"'contest_id' not found in {problem_specific_config_path}, using directory name '{problem_id_for_kb}' as problem_id.")
+        except Exception as e:
+            logger.warning(
+                f"Could not load {problem_specific_config_path} to determine contest_id, using directory name '{problem_id_for_kb}'. Error: {e}"
+            )
 
-    # Check for evolution log
-    evolution_log = knowledge_base.get_evolution_log(session_id)
-    if evolution_log:
-        click.echo(f"Evolution: Complete ({evolution_log.get('generations_completed', 0)} generations)")
-        click.echo(f"Best Score: {evolution_log.get('best_score', 'Unknown')}")
-        click.echo(f"Duration: {_format_duration(evolution_log.get('duration', 0))}")
-    else:
-        click.echo("Evolution: Not started")
+    try:
+        knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
+        submit_service = SubmitService(global_config, knowledge_base)  # Pass global_config
 
-    # Check for best solution
-    best_solution = knowledge_base.get_best_solution(session_id)
-    if best_solution:
-        click.echo(f"Best Solution: Available (score: {best_solution.get('score', 'Unknown')})")
+        details = submit_service.submit_solution(session_id=session_id_arg, output_path=output_path_option)
+
+        if details["output_path"] != "logged_to_console":
+            click.echo(f"Best solution for session {details['session_id']} (Score: {details['score']}) written to {details['output_path']}")
+        else:
+            click.echo(f"Best solution for session {details['session_id']} (Score: {details['score']}):")
+            # The service logs the code, so we don't need to print it again from details['solution_code']
+            # unless explicit console print of code is desired here.
+            # For now, relying on service logging for the code itself if not written to file.
+            click.echo("The solution code has been logged.")
+
+    except ValueError as e:  # Specific errors from service (e.g., session/solution not found)
+        click.secho(str(e), fg="red")
+        ctx.exit(1)
+    except RuntimeError as e:  # E.g., file writing error
+        click.secho(str(e), fg="red")
+        ctx.exit(1)
+    except Exception as e:
+        click.secho(f"An unexpected error occurred during submission: {e}", fg="red")
+        logger.exception("Unexpected error in submit command.")
+        ctx.exit(1)
 
 
-def _format_timestamp(timestamp):
+@cli.command()
+@click.argument("batch_config_path", metavar="BATCH_CONFIG_FILE", type=click.Path(exists=True, dir_okay=False))
+@click.option("--parallel", "-p", "parallel_override", type=int, help="Number of parallel experiment executions (overrides batch config).")
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir_override",
+    type=click.Path(file_okay=False, writable=True),
+    help="Output directory for batch results (overrides batch config).",
+)
+@click.pass_context
+def batch(ctx, batch_config_path, parallel_override, output_dir_override):
     """
-    Format a timestamp.
+    Run batch processing of experiments defined in BATCH_CONFIG_FILE.
     """
-    if not timestamp:
-        return "Unknown"
+    global_config = ctx.obj["config"]  # Global config can provide defaults for batch service
+    llm_client = ctx.obj["llm_client"]
+    docker_manager = ctx.obj["docker_manager"]
 
-    import datetime
+    batch_service = BatchService(llm_client, docker_manager, global_config)
 
-    return datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        click.echo(f"Starting batch processing with config: {batch_config_path}")
+        if output_dir_override:
+            click.echo(f"Output directory override: {output_dir_override}")
+        if parallel_override is not None:
+            click.echo(f"Parallel executions override: {parallel_override}")
+
+        results = asyncio.run(
+            batch_service.run_batch_experiments_service(
+                batch_config_path=batch_config_path,
+                output_dir_override=output_dir_override,
+                parallel_override=parallel_override,
+            )
+        )
+
+        click.echo("\nBatch processing completed.")
+        # Batch service already logs summary, but we can print a high-level summary here too.
+        successful_experiments = sum(1 for r in results if not r.get("error"))
+        failed_experiments = len(results) - successful_experiments
+        click.echo(f"Total experiments processed: {len(results)}")
+        click.echo(f"  Successful: {successful_experiments}")
+        click.echo(f"  Failed: {failed_experiments}")
+        if results:  # If there are any results (even errors)
+            Path(results[0].get("experiment_dir_path", output_dir_override or ".")).parent / "summary.json"
+            # Attempt to get the actual summary path from service if possible, or construct best guess
+            # The service logs where summary.json is saved.
+            click.echo("Detailed results and summary.json are typically in the batch output directory (see logs).")
+
+    except Exception as e:
+        click.secho(f"An error occurred during batch processing: {e}", fg="red")
+        logger.exception("Unexpected error in batch command.")
+        ctx.exit(1)
 
 
-def _format_duration(seconds):
-    """
-    Format a duration in seconds.
-    """
-    if not seconds:
-        return "Unknown"
-
-    minutes, seconds = divmod(int(seconds), 60)
-    hours, minutes = divmod(minutes, 60)
-
-    if hours > 0:
-        return f"{hours}h {minutes}m {seconds}s"
-    if minutes > 0:
-        return f"{minutes}m {seconds}s"
-    return f"{seconds}s"
-
-
+# Placeholder for 'stop' command if it's to be refactored or kept
 @cli.command()
 @click.argument("session_id")
 @click.pass_context
 def stop(ctx, session_id):
     """
-    Stop a running session.
+    Stop a running session (Placeholder - TBD if part of a service or direct KB interaction).
+    For now, this directly interacts with KnowledgeBase status update.
     """
-    config = ctx.obj["config"]
-
-    # Initialize knowledge base
-    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"))
-
-    # Get session
-    session = knowledge_base.get_session(session_id)
-    if not session:
-        click.echo(f"Session {session_id} not found")
-        return
-
-    # Update session status
-    knowledge_base.update_session(session_id, {"status": "stopped"})
-
-    click.echo(f"Session {session_id} stopped")
-
-
-@cli.command()
-@click.argument("session_id")
-@click.option("--output", "-o", type=click.Path(), help="Output file path")
-@click.pass_context
-def submit(ctx, session_id, output):
-    """
-    Submit the best solution from a session.
-    """
-    config = ctx.obj["config"]
-
-    # Initialize knowledge base
-    knowledge_base = KnowledgeBase(config.get("workspace.base_dir"))
-
-    # Get session
-    session = knowledge_base.get_session(session_id)
-    if not session:
-        click.echo(f"Session {session_id} not found")
-        return
-
-    # Get best solution
-    best_solution = knowledge_base.get_best_solution(session_id)
-    if not best_solution:
-        click.echo(f"No solution found for session {session_id}")
-        return
-
-    # Get solution code
-    solution_code = best_solution.get("code")
-    if not solution_code:
-        click.echo(f"No code found in best solution for session {session_id}")
-        return
-
-    # Write to output file or print
-    if output:
-        with open(output, "w") as f:
-            f.write(solution_code)
-        click.echo(f"Best solution written to {output}")
-    else:
-        click.echo("\n=== Best Solution ===")
-        click.echo(solution_code)
-
-    click.echo(f"Score: {best_solution.get('score', 'Unknown')}")
-
-
-@cli.command()
-@click.argument("batch_config", type=click.Path(exists=True))
-@click.option("--parallel", "-p", type=int, help="Number of parallel executions")
-@click.option("--output-dir", "-o", type=click.Path(), help="Output directory")
-@click.pass_context
-def batch(ctx, batch_config, parallel, output_dir):
-    """
-    Run batch processing.
-    """
-    config = ctx.obj["config"]
-
-    # Override configuration with command-line options
-    if parallel:
-        config.set("batch.parallel", parallel)
-
-    if output_dir:
-        config.set("batch.output_dir", output_dir)
-
-    # Load batch configuration
-    with open(batch_config) as f:
-        batch_cfg = yaml.safe_load(f)
-
-    # Get output directory
-    if not output_dir:
-        output_dir = batch_cfg.get("common", {}).get("workspace", os.path.join(os.getcwd(), "ahc_batch"))
-
-    output_dir = os.path.abspath(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
-
-    click.echo(f"Batch processing configuration loaded from {batch_config}")
-    click.echo(f"Output directory: {output_dir}")
-
-    # Get number of parallel executions
-    if not parallel:
-        parallel = batch_cfg.get("common", {}).get("parallel", 1)
-
-    click.echo(f"Parallel executions: {parallel}")
-
-    # Get problems
-    problems = batch_cfg.get("problems", [])
-    if not problems:
-        click.echo("No problems found in batch configuration")
-        return
-
-    click.echo(f"Found {len(problems)} problems")
-
-    # Get parameter sets
-    parameter_sets = batch_cfg.get("parameter_sets", [])
-    if not parameter_sets:
-        click.echo("No parameter sets found in batch configuration")
-        return
-
-    click.echo(f"Found {len(parameter_sets)} parameter sets")
-
-    # Get experiments
-    experiments = batch_cfg.get("experiments", [])
-    if not experiments:
-        click.echo("No experiments found in batch configuration")
-        return
-
-    click.echo(f"Found {len(experiments)} experiments")
-
-    # Run experiments
-    asyncio.run(_run_batch_experiments(config, batch_cfg, output_dir, parallel))
-
-
-async def _run_batch_experiments(config, batch_cfg, output_dir, parallel):
-    """
-    Run batch experiments asynchronously.
-    """
-    # Get problems
-    problems = {p["name"]: p for p in batch_cfg.get("problems", [])}
-
-    # Get parameter sets
-    parameter_sets = {p["name"]: p for p in batch_cfg.get("parameter_sets", [])}
-
-    # Get experiments
-    experiments = batch_cfg.get("experiments", [])
-
-    # Create experiment tasks
-    tasks = []
-    for _, experiment in enumerate(experiments):
-        problem_name = experiment.get("problem")
-        parameter_set_name = experiment.get("parameter_set")
-        repeats = experiment.get("repeats", 1)
-
-        if problem_name not in problems:
-            click.echo(f"Problem {problem_name} not found, skipping experiment")
-            continue
-
-        if parameter_set_name not in parameter_sets:
-            click.echo(f"Parameter set {parameter_set_name} not found, skipping experiment")
-            continue
-
-        problem = problems[problem_name]
-        parameter_set = parameter_sets[parameter_set_name]
-
-        for j in range(repeats):
-            experiment_id = f"{problem_name}_{parameter_set_name}_{j + 1}"
-            experiment_dir = os.path.join(output_dir, experiment_id)
-            os.makedirs(experiment_dir, exist_ok=True)
-
-            # Create experiment task
-            task = _run_experiment(config, experiment_id, problem, parameter_set, experiment_dir)
-
-            tasks.append(task)
-
-    # Run experiments in parallel
-    click.echo(f"Running {len(tasks)} experiments in parallel batches of {parallel}")
-
-    results = []
-    for i in range(0, len(tasks), parallel):
-        batch_tasks = tasks[i : i + parallel]
-        batch_results = await asyncio.gather(*batch_tasks)
-        results.extend(batch_results)
-
-        click.echo(f"Completed {min(i + parallel, len(tasks))}/{len(tasks)} experiments")
-
-    click.echo("All experiments completed")
-
-    # Summarize results
-    click.echo("\n=== Experiment Results ===")
-
-    for result in results:
-        click.echo(f"\nExperiment: {result['experiment_id']}")
-        click.echo(f"Problem: {result['problem_name']}")
-        click.echo(f"Parameter Set: {result['parameter_set_name']}")
-        click.echo(f"Best Score: {result['best_score']}")
-        click.echo(f"Generations: {result['generations']}")
-        click.echo(f"Duration: {_format_duration(result['duration'])}")
-
-    # Write summary to file
-    summary_path = os.path.join(output_dir, "summary.json")
-    with open(summary_path, "w") as f:
-        json.dump(results, f, indent=2)
-
-    click.echo(f"\nSummary written to {summary_path}")
-
-
-async def _run_experiment(config, experiment_id, problem, parameter_set, experiment_dir):
-    """
-    Run a single experiment.
-    """
-    # Create experiment-specific config
-    experiment_config = config.export()
-
-    # Override with parameter set
-    for key, value in parameter_set.items():
-        if key != "name":
-            if "." in key:
-                experiment_config = _set_nested_dict(experiment_config, key.split("."), value)
-            else:
-                experiment_config[key] = value
-
-    # Initialize clients and modules
-    llm_client = LLMClient(experiment_config.get("llm"))
-    docker_manager = DockerManager(experiment_config.get("docker"))
-    problem_id = os.path.splitext(os.path.basename(problem["path"]))[0]
-    knowledge_base = KnowledgeBase(experiment_dir, problem_id=problem_id)
-    problem_analyzer = ProblemAnalyzer(llm_client, experiment_config.get("analyzer"))
-    solution_strategist = SolutionStrategist(llm_client, experiment_config.get("strategist"))
-    evolutionary_engine = EvolutionaryEngine(llm_client, experiment_config.get("evolution"))
-    implementation_debugger = ImplementationDebugger(llm_client, docker_manager, experiment_config.get("debugger"))
-    problem_logic = ProblemLogic(llm_client, experiment_config.get("problem_logic"))
-
-    # Parse problem statement
-    problem_path = problem.get("path")
-    with open(problem_path) as f:
-        problem_text = f.read()
-
-    # Create session
-    session_id = knowledge_base.create_session(
-        problem.get("name", "unknown"), {"problem_text": problem_text, "experiment_id": experiment_id}
-    )
-
-    # Analyze problem
-    problem_analysis = await problem_analyzer.analyze(problem_text)
-    knowledge_base.save_problem_analysis(session_id, problem_analysis)
-
-    # Develop solution strategy
-    solution_strategy = await solution_strategist.develop_strategy(problem_analysis)
-    knowledge_base.save_solution_strategy(session_id, solution_strategy)
-
-    # Generate initial solution
-    initial_solution = await problem_logic.generate_initial_solution(problem_analysis)
-
-    # Generate test cases
-    test_cases = await problem_logic.generate_test_cases(problem_analysis, 3)
-
-    # Create score calculator
-    score_calculator = await problem_logic.create_score_calculator(problem_analysis)
-
-    # Define evaluation function
-    def evaluate_solution(code, current_test_cases, current_score_calculator):
-        total_score = 0
-        details = {}
-
-        for i, test_case in enumerate(current_test_cases):
-            result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
-
-            if result["success"]:
-                score = current_score_calculator(test_case["input"], result["execution_output"])
-                total_score += score
-                details[f"test_{i + 1}"] = {"score": score, "execution_time": result["execution_time"]}
-            else:
-                details[f"test_{i + 1}"] = {
-                    "error": result["compilation_errors"] or result["execution_errors"],
-                    "score": 0,
-                }
-
-        avg_score = total_score / len(current_test_cases) if current_test_cases else 0
-        return avg_score, details
-
-    # Run evolutionary process
-    start_time = time.time()
-
-    result = await evolutionary_engine.evolve(
-        problem_analysis,
-        solution_strategy,
-        initial_solution,
-        lambda code: evaluate_solution(code, test_cases, score_calculator),
-        os.path.join(experiment_dir, "sessions", session_id),
-    )
-
-    duration = time.time() - start_time
-
-    # Save experiment results
-    result_file = os.path.join(experiment_dir, "result.json")
-    with open(result_file, "w") as f:
-        json.dump(
-            {
-                "experiment_id": experiment_id,
-                "problem_name": problem.get("name"),
-                "parameter_set_name": parameter_set.get("name"),
-                "best_score": result["best_score"],
-                "generations": result["generations_completed"],
-                "duration": duration,
-                "session_id": session_id,
-            },
-            f,
-            indent=4,
-        )
-
-    logger.info(f"Experiment {experiment_id} completed. Results saved to {result_file}")
-    return {
-        "experiment_id": experiment_id,
-        "problem_name": problem.get("name"),
-        "parameter_set_name": parameter_set.get("name"),
-        "best_score": result["best_score"],
-        "generations": result["generations_completed"],
-        "duration": duration,
-        "session_id": session_id,
-    }
-
-
-def _set_nested_dict(d, keys, value):
-    """
-    Set a value in a nested dictionary.
-    """
-    if len(keys) == 1:
-        d[keys[0]] = value
-        return d
-
-    if keys[0] not in d:
-        d[keys[0]] = {}
-
-    d[keys[0]] = _set_nested_dict(d[keys[0]], keys[1:], value)
-    return d
+    config = ctx.obj["config"]  # Global config
+    workspace_dir_str = config.get("workspace.base_dir")
+    if not workspace_dir_str:
+        click.secho("Error: 'workspace.base_dir' not defined. Cannot determine context.", fg="red")
+        ctx.exit(1)
+
+    workspace_path = Path(workspace_dir_str).resolve()
+    problem_id_for_kb = workspace_path.name  # Assuming base_dir is problem specific
+
+    # Similar to 'submit', determine problem_id more robustly if possible
+    problem_specific_config_path = workspace_path / "ahc_config.yaml"
+    if problem_specific_config_path.exists():
+        try:
+            problem_cfg = Config(str(problem_specific_config_path))
+            try:
+                cfg_contest_id = problem_cfg.get("contest_id")
+                if cfg_contest_id:
+                    problem_id_for_kb = cfg_contest_id
+            except Exception as e:
+                logger.debug(f"Failed to load contest ID from config: {e}")  # Log exception instead of silent pass
+        except Exception as e:
+            logger.debug(f"Failed to load problem config: {e}")  # Log exception instead of silent pass
+
+    try:
+        knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
+        session = knowledge_base.get_session(session_id)
+        if not session:
+            click.secho(f"Session {session_id} not found in problem context '{problem_id_for_kb}'.", fg="red")
+            ctx.exit(1)
+
+        knowledge_base.update_session(session_id, {"status": "stopped"})
+        click.echo(f"Session {session_id} marked as stopped.")
+    except Exception as e:
+        click.secho(f"Error stopping session {session_id}: {e}", fg="red")
+        logger.exception(f"Error in stop command for session {session_id}.")
+        ctx.exit(1)
+
+
+# Commands like 'config' and 'docker' are more meta-operations or direct interactions
+# with Config/DockerManager, not necessarily fitting into the problem-solving services.
+# These can be refactored later if a pattern emerges (e.g., a ConfigManagementService).
 
 
 @cli.group()
 @click.pass_context
-def config(_ctx):
-    """
-    Manage configuration.
-    """
+def config(ctx):  # Renamed variable to avoid conflict with 'config' module
+    """Manage agent configuration."""
 
 
 @config.command("get")
 @click.argument("key")
 @click.pass_context
 def config_get(ctx, key):
-    """
-    Get a configuration value.
-    """
-    config = ctx.obj["config"]
-    value = config.get(key)
-
+    """Get a configuration value."""
+    app_config = ctx.obj["config"]  # Renamed variable
+    value = app_config.get(key)
     if value is None:
-        click.echo(f"Configuration key '{key}' not found")
+        click.echo(f"Configuration key '{key}' not found.")
     else:
         click.echo(f"{key} = {value}")
 
@@ -1134,140 +424,88 @@ def config_get(ctx, key):
 @click.argument("value")
 @click.pass_context
 def config_set(ctx, key, value):
-    """
-    Set a configuration value.
-    """
-    config = ctx.obj["config"]
-
-    # Convert value to appropriate type
+    """Set a configuration value (in memory, for current session)."""
+    app_config = ctx.obj["config"]  # Renamed variable
+    # Basic type conversion, similar to original
     if value.lower() == "true":
-        value = True
+        value_to_set = True
     elif value.lower() == "false":
-        value = False
+        value_to_set = False
     elif value.isdigit():
-        value = int(value)
+        value_to_set = int(value)
     elif value.replace(".", "", 1).isdigit() and value.count(".") == 1:
-        value = float(value)
+        value_to_set = float(value)
+    else:
+        value_to_set = value
 
-    config.set(key, value)
-
-    click.echo(f"Set {key} = {value}")
-
-
-@config.command("export")
-@click.argument("path", type=click.Path())
-@click.pass_context
-def config_export(ctx, path):
-    """
-    Export configuration to a file.
-    """
-    config = ctx.obj["config"]
-    config.save(path)
-
-    click.echo(f"Configuration exported to {path}")
+    try:
+        app_config.set(key, value_to_set)
+        click.echo(f"Set {key} = {value_to_set} (in memory for this session).")
+        # Note: This doesn't save to the config file unless explicitly done.
+        # The original Config class might need a save method to persist these.
+    except Exception as e:
+        click.secho(f"Error setting configuration: {e}", fg="red")
 
 
-@config.command("import")
-@click.argument("path", type=click.Path(exists=True))
-@click.pass_context
-def config_import(ctx, path):
-    """
-    Import configuration from a file.
-    """
-    config = ctx.obj["config"]
-
-    with open(path) as f:
-        imported_config = yaml.safe_load(f)
-
-    config.import_config(imported_config)
-
-    click.echo(f"Configuration imported from {path}")
-
-
+# Docker command group remains, uses DockerManager from ctx.obj
 @cli.group()
 @click.pass_context
-def docker(_ctx):
-    """
-    Manage Docker environment.
-    """
+def docker(ctx):
+    """Manage Docker environment for AHC."""
 
 
 @docker.command("setup")
 @click.pass_context
 def docker_setup(ctx):
-    """
-    Set up Docker environment.
-    """
-    config = ctx.obj["config"]
-
-    # Initialize Docker manager
-    docker_manager = DockerManager(config.get("docker"))
-
-    # Pull Docker image
-    click.echo(f"Pulling Docker image: {docker_manager.image}")
-    success = docker_manager.pull_image()
-
-    if success:
-        click.echo("Docker image pulled successfully")
-    else:
-        click.echo("Failed to pull Docker image")
+    """Set up Docker environment (e.g., pull image)."""
+    docker_manager = ctx.obj["docker_manager"]
+    click.echo(f"Attempting to pull Docker image: {docker_manager.image_name}")  # Corrected to image_name
+    try:
+        # DockerManager.pull_image() was synchronous in the original.
+        # If it becomes async, this needs `asyncio.run()`. Assuming sync for now.
+        success = docker_manager.pull_image()
+        if success:
+            click.echo("Docker image pulled successfully (or was already present).")
+        else:
+            # DockerManager pull_image should ideally raise error on failure or return detailed status
+            click.secho("Failed to pull Docker image. Check logs for details.", fg="red")
+    except Exception as e:
+        click.secho(f"Error during Docker setup: {e}", fg="red")
+        logger.exception("Error in docker setup command.")
 
 
 @docker.command("status")
 @click.pass_context
 def docker_status(ctx):
-    """
-    Show Docker environment status.
-    """
-    config = ctx.obj["config"]
-
-    # Initialize Docker manager
-    docker_manager = DockerManager(config.get("docker"))
-
-    # Check Docker
+    """Show Docker environment status."""
+    docker_manager = ctx.obj["docker_manager"]
     try:
-        docker_manager.check_docker_availability()
-        click.echo("Docker is available")
+        docker_manager.check_docker_availability()  # This raises RuntimeError if unavailable
+        click.echo("Docker is available.")
 
-        # Run test command
+        # Test command execution
+        # Assuming current directory is a safe workspace for test.
+        # DockerManager.run_command() was synchronous.
         result = docker_manager.run_command("echo 'Docker test successful'", os.getcwd())
-
-        if result["success"]:
-            click.echo("Docker test successful")
+        if result and result.get("success"):  # Check if result is not None
+            click.echo(f"Docker test command successful. Output: {result.get('stdout', '').strip()}")
+        elif result:
+            click.secho(f"Docker test command failed. Error: {result.get('stderr', 'Unknown error')}", fg="red")
         else:
-            click.echo(f"Docker test failed: {result['stderr']}")
+            click.secho("Docker test command did not return expected result.", fg="red")
 
     except RuntimeError as e:
-        logger.error(f"Docker availability check failed. Type: {type(e).__name__}, Error: {e}")
-        click.echo(f"Docker is not available: {e!s}")
-
-
-@docker.command("cleanup")
-@click.pass_context
-def docker_cleanup(ctx):
-    """
-    Clean up Docker environment.
-    """
-    config = ctx.obj["config"]
-
-    # Initialize Docker manager
-    docker_manager = DockerManager(config.get("docker"))
-
-    # Clean up
-    click.echo("Cleaning up Docker resources")
-    success = docker_manager.cleanup()
-
-    if success:
-        click.echo("Docker resources cleaned up successfully")
-    else:
-        click.echo("Failed to clean up Docker resources")
+        click.secho(f"Docker is not available: {e}", fg="red")
+    except Exception as e:
+        click.secho(f"An unexpected error occurred while checking Docker status: {e}", fg="red")
+        logger.exception("Error in docker status command.")
 
 
 def main():
     """
     Main entry point.
     """
-    cli(obj={})
+    cli(obj={})  # obj is initialized by Click context
 
 
 if __name__ == "__main__":

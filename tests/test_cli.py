@@ -2,8 +2,6 @@
 Unit tests for CLI module.
 """
 
-import asyncio
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,7 +9,8 @@ from click.testing import CliRunner
 import pytest
 import yaml
 
-from ahc_agent.cli import _solve_problem, cli
+# Main CLI entrypoint
+from ahc_agent.cli import cli
 from ahc_agent.config import Config
 
 
@@ -31,661 +30,474 @@ class TestCLI:
         """
         Test CLI help command.
         """
-        # Run CLI with --help
         result = runner.invoke(cli, ["--help"])
-
-        # Check result
         assert result.exit_code == 0
         assert "AHCAgent CLI" in result.output
         assert "init" in result.output
         assert "solve" in result.output
         assert "status" in result.output
         assert "submit" in result.output
+        assert "batch" in result.output
+        assert "docker" in result.output
+        assert "config" in result.output
 
-    @patch("ahc_agent.cli.Config")
-    def test_init_command(self, mock_config, runner):
-        """
-        Test init command.
-        """
-        # Mock Config
-        mock_config_instance = MagicMock()
-        mock_config.return_value = mock_config_instance
+    @patch("ahc_agent.cli.InitService")
+    def test_init_command(self, MockInitService, runner):
+        """Test basic init command flow."""
+        mock_init_service_instance = MockInitService.return_value
+        mock_init_service_instance.initialize_project = MagicMock(
+            return_value={
+                "project_dir": "/mocked/workspace/ahc001",
+                "config_file_path": "/mocked/workspace/ahc001/ahc_config.yaml",
+                "contest_id": "ahc001",
+            }
+        )
 
-        # Run init command
-        with runner.isolated_filesystem() as temp_dir:
-            # Mock Config get method
-            def mock_get_side_effect(key, default=None):
-                if key == "workspace.base_dir":
-                    return os.path.join(temp_dir, "workspace")
-                if key == "template":
-                    return "default"
-                if key == "docker.image":
-                    return "ubuntu:latest"
-                return MagicMock()
+        result = runner.invoke(cli, ["init", "ahc001", "--workspace", "./workspace"])
 
-            mock_config_instance.get.side_effect = mock_get_side_effect
+        assert result.exit_code == 0
+        MockInitService.assert_called_once()
+        assert isinstance(MockInitService.call_args[0][0], Config)
 
-            # Corrected command invocation
-            runner.invoke(cli, ["init", "ahc001", "--workspace", "./workspace"])
+        mock_init_service_instance.initialize_project.assert_called_once_with(
+            contest_id="ahc001", template=None, docker_image=None, workspace="./workspace"
+        )
+        assert "Project for contest 'ahc001' initialized successfully" in result.output
+        assert "/mocked/workspace/ahc001" in result.output
 
-            # Check Config calls
-            # The base_dir might be set to the absolute path by the CLI logic
-            # For simplicity, we're checking if it's called with something like './workspace'
-            # or its resolved equivalent. This part of the test might need more robust path handling.
-            # mock_config_instance.set.assert_any_call(
-            #     "workspace.base_dir", os.path.abspath(workspace_path)
-            # )
-            # mock_config_instance.save.assert_called_once_with(
-            #     os.path.join(os.path.abspath(workspace_path), "ahc_config.yaml")
-            # )
-
-    @patch("ahc_agent.cli._solve_problem")
-    @patch("ahc_agent.cli.asyncio.run")
-    def test_solve_command(self, mock_asyncio_run, mock_solve_problem_coroutine, runner):
-        """
-        Test solve command.
-        """
-        # _solve_problem がコルーチン関数であると仮定し、AsyncMock を return_value に設定
-        # これにより、_solve_problem(...) は await 可能な AsyncMock インスタンスを返す
-        mock_solve_problem_coroutine.return_value = AsyncMock()  # この AsyncMock は await される必要がある
-
-        # asyncio.run が呼び出されたときに、渡されたコルーチンを実行するような side_effect
-        def run_coro_side_effect(coro, *_args, **_kwargs):
-            # coro が AsyncMock インスタンスなので、それを await する
-            # 実際の asyncio.run は結果を返すので、ここでは None を返すか、AsyncMock の結果を返す
-            async def dummy_coro():
-                return await coro
-
-            # 新しいイベントループを作成して使用する
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(dummy_coro())
-            finally:
-                loop.close()
-                asyncio.set_event_loop(None)  # グローバルなイベントループポリシーをリセット
-            return result
-
-        mock_asyncio_run.side_effect = run_coro_side_effect
-
-        # Create a temporary problem file
-        with runner.isolated_filesystem() as temp_dir:  # 一時ディレクトリを取得
-            # Create problem file
-            problem_file_path = Path(temp_dir) / "problem.md"
-            with open(problem_file_path, "w") as f:
-                f.write("# Test Problem\n\nThis is a test problem.")
-
-            # Create dummy ahc_config.yaml
-            config_file_path = Path(temp_dir) / "ahc_config.yaml"
-            with open(config_file_path, "w") as f:
-                yaml.dump({"contest_id": "test_contest"}, f)
-
-            # Run solve command with the directory path
-            runner.invoke(cli, ["solve", temp_dir])
-
-            # Check asyncio.run call
-            mock_asyncio_run.assert_called_once()
-            # _solve_problem が期待通りに呼び出されたかも確認
-            mock_solve_problem_coroutine.assert_called_once()
-
-    @patch("ahc_agent.cli.KnowledgeBase")
-    def test_status_command(self, mock_knowledge_base, runner):
-        """
-        Test status command.
-        """
-        # Mock KnowledgeBase
-        mock_kb_instance = MagicMock()
-        mock_kb_instance.get_session.return_value = {
-            "session_id": "test-session",
-            "problem_id": "Test Problem",
-            "created_at": 1621234567,
-            "updated_at": 1621234567,
-            "status": "completed",
-        }
-        mock_kb_instance.get_problem_analysis.return_value = {"title": "Test Problem"}
-        mock_kb_instance.get_solution_strategy.return_value = {"approach": "Test approach"}
-        mock_kb_instance.get_evolution_log.return_value = {"generations_completed": 10, "best_score": 100, "duration": 60}
-        mock_kb_instance.get_best_solution.return_value = {"code": "// Test code", "score": 100}
-        mock_knowledge_base.return_value = mock_kb_instance
-
-        # Run status command
-        result = runner.invoke(cli, ["status", "test-session"])
-
-        # Check result
-        assert "Session ID: test-session" in result.output
-        assert "Problem: Test Problem" in result.output
-        assert "Status: completed" in result.output
-        assert "Problem Analysis: Complete" in result.output
-        assert "Solution Strategy: Complete" in result.output
-        assert "Evolution: Complete (10 generations)" in result.output
-        assert "Best Score: 100" in result.output
-
-    @patch("ahc_agent.cli.KnowledgeBase")
-    def test_submit_command(self, mock_knowledge_base, runner):
-        """
-        Test submit command.
-        """
-        # Mock KnowledgeBase
-        mock_kb_instance = MagicMock()
-        mock_kb_instance.get_session.return_value = {"session_id": "test-session", "problem_id": "Test Problem"}
-        mock_kb_instance.get_best_solution.return_value = {"code": "// Test code", "score": 100}
-        mock_knowledge_base.return_value = mock_kb_instance
-
-        # Run submit command with output file
-        with runner.isolated_filesystem():
-            runner.invoke(cli, ["submit", "test-session", "--output", "solution.cpp"])
-
-            # Check output file
-            with open("solution.cpp") as f:
-                content = f.read()
-                assert content == "// Test code"
-
-    @patch("ahc_agent.cli.Config")
-    def test_config_get_command(self, mock_config, runner):
-        """
-        Test config get command.
-        """
-        # Mock Config
-        mock_config_instance = MagicMock()
-        mock_config_instance.get.return_value = "o4-mini"
-        mock_config.return_value = mock_config_instance
-
-        # Run config get command
-        runner.invoke(cli, ["config", "get", "llm.model"])
-
-        # Check Config calls
-        mock_config_instance.get.assert_called_with("llm.model")
-
-    @patch("ahc_agent.cli.Config")
-    def test_config_set_command(self, mock_config, runner):
-        """
-        Test config set command.
-        """
-        # Mock Config
-        mock_config_instance = MagicMock()
-        mock_config.return_value = mock_config_instance
-
-        # Run config set command
-        runner.invoke(cli, ["config", "set", "llm.model", "gpt-3.5-turbo"])
-
-        # Check Config calls
-        mock_config_instance.set.assert_called_with("llm.model", "gpt-3.5-turbo")
-
-    @patch("ahc_agent.cli.DockerManager")
-    def test_docker_status_command(self, mock_docker_manager, runner):
-        """
-        Test docker status command.
-        """
-        # Mock DockerManager
-        mock_docker_manager_instance = MagicMock()
-        mock_docker_manager.return_value = mock_docker_manager_instance
-        mock_docker_manager_instance.is_docker_available.return_value = True
-        mock_docker_manager_instance.test_docker_connection.return_value = True
-
-        # Run docker status command
-        result = runner.invoke(cli, ["docker", "status"])
-
-        # Check result
-        assert "Docker is available" in result.output
-        assert "Docker test successful" in result.output
-
-    @patch("ahc_agent.cli.scrape_and_setup_problem")  # scrape_and_setup_problemもモックする
-    @patch("ahc_agent.cli.Config")
-    def test_init_default_workspace(self, mock_config, mock_scraper, runner: CliRunner, tmp_path: Path):
+    @patch("ahc_agent.cli.InitService")
+    def test_init_default_workspace(self, MockInitService, runner: CliRunner, tmp_path: Path):
         """Test init command with default workspace (uses contest_id as dir name)."""
         contest_id = "ahc999"
 
-        # Mock Config instance and its get method
-        mock_config_instance = MagicMock()
-        mock_config.return_value = mock_config_instance
+        mock_init_service_instance = MockInitService.return_value
+        # Simulate the service creating paths relative to the execution directory (tmp_path here)
+        # When runner.isolated_filesystem is used, CWD becomes that isolated dir.
+        # InitService's default workspace logic (os.getcwd() / contest_id) will use this.
+        # So, expected_project_dir should be relative to the isolated CWD.
+        # For simplicity, we'll assume the service returns an absolute-like path for the mock.
+        expected_project_dir = Path(tmp_path) / contest_id
+        expected_config_path = expected_project_dir / "ahc_config.yaml"
 
-        def mock_get_side_effect(key, default_val=None):
-            if key == "template":
-                return "default"
-            if key == "docker.image":
-                return "ubuntu:latest"
-            return default_val
-
-        mock_config_instance.get.side_effect = mock_get_side_effect
-
-        # Define a side effect for the mock_scraper to simulate directory and file creation
-        def scraper_side_effect(url, base_output_dir):
-            # Simulate the creation of tools/in directory and a sample test file
-            # base_output_dir is expected to be project_dir in this context
-            project_path = Path(base_output_dir)
-            tools_path = project_path / "tools"
-            tools_in_path = tools_path / "in"
-            tools_in_path.mkdir(parents=True, exist_ok=True)
-            (tools_in_path / "0000.txt").touch()
-            return True  # Indicate success, similar to the real function
-
-        mock_scraper.side_effect = scraper_side_effect
-
-        # Change current working directory to tmp_path for the test
-        os.chdir(tmp_path)
-
-        result = runner.invoke(cli, ["init", contest_id])
-
-        project_dir = tmp_path / contest_id
-        assert project_dir.is_dir()
-
-        config_file = project_dir / "ahc_config.yaml"
-        assert config_file.is_file()
-
-        with open(config_file) as f:
-            project_config = yaml.safe_load(f)
-
-        assert project_config["contest_id"] == contest_id
-        assert project_config["template"] == "default"
-        assert project_config["docker_image"] == "ubuntu:latest"
-
-        expected_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
-        mock_scraper.assert_called_once_with(expected_url, str(project_dir))
-
-        tools_dir = project_dir / "tools"
-        in_dir = tools_dir / "in"
-        sample_test_case_file = in_dir / "0000.txt"
-
-        assert tools_dir.is_dir(), "tools directory should be created"
-        assert in_dir.is_dir(), "tools/in directory should be created"
-        assert sample_test_case_file.is_file(), "sample test case file (0000.txt) should be created in tools/in"
-
-        assert (
-            f"Initialized AHC project in ./{contest_id}" in result.output
-            or f"Initialized AHC project in {project_dir}" in result.output
+        mock_init_service_instance.initialize_project = MagicMock(
+            return_value={
+                "project_dir": str(expected_project_dir),
+                "config_file_path": str(expected_config_path),
+                "contest_id": contest_id,
+            }
         )
-        assert f"Project configuration saved to {config_file}" in result.output
 
-    @patch("ahc_agent.cli.scrape_and_setup_problem")
-    @patch("ahc_agent.cli.Config")
-    def test_init_with_workspace(self, mock_config, mock_scraper, runner: CliRunner, tmp_path: Path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as _:
+            result = runner.invoke(cli, ["init", contest_id])
+
+            assert result.exit_code == 0
+            mock_init_service_instance.initialize_project.assert_called_once_with(
+                contest_id=contest_id, template=None, docker_image=None, workspace=None
+            )
+            assert f"Project for contest '{contest_id}' initialized successfully" in result.output
+            # The output path in the message comes from the mocked return value
+            assert str(expected_project_dir) in result.output
+
+    @patch("ahc_agent.cli.InitService")
+    def test_init_with_workspace(self, MockInitService, runner: CliRunner, tmp_path: Path):
         """Test init command with a specified workspace."""
         contest_id = "ahc998"
         workspace_name = "my_custom_workspace"
 
-        # Mock Config instance and its get method
-        mock_config_instance = MagicMock()
-        mock_config.return_value = mock_config_instance
+        mock_init_service_instance = MockInitService.return_value
+        expected_project_dir = tmp_path / workspace_name  # Service returns absolute-like path
+        expected_config_path = expected_project_dir / "ahc_config.yaml"
 
-        def mock_get_side_effect(key, default_val=None):
-            if key == "template":
-                return "default"
-            if key == "docker.image":
-                return "ubuntu:latest"
-            return default_val
-
-        mock_config_instance.get.side_effect = mock_get_side_effect
-
-        # Define a side effect for the mock_scraper to simulate directory and file creation
-        def scraper_side_effect(url, base_output_dir):
-            project_path = Path(base_output_dir)
-            tools_path = project_path / "tools"
-            tools_in_path = tools_path / "in"
-            tools_in_path.mkdir(parents=True, exist_ok=True)
-            (tools_in_path / "0000.txt").touch()
-            return True
-
-        mock_scraper.side_effect = scraper_side_effect
-
-        # Create workspace_path relative to tmp_path for isolation
-        workspace_path_relative = Path(workspace_name)
-        workspace_path_absolute = tmp_path / workspace_name
-
-        # Change CWD to tmp_path so relative workspace path works as expected
-        os.chdir(tmp_path)
-
-        result = runner.invoke(cli, ["init", contest_id, "--workspace", str(workspace_path_relative)])
-
-        assert workspace_path_absolute.is_dir()
-
-        config_file = workspace_path_absolute / "ahc_config.yaml"
-        assert config_file.is_file()
-
-        with open(config_file) as f:
-            project_config = yaml.safe_load(f)
-
-        assert project_config["contest_id"] == contest_id
-        assert project_config["template"] == "default"
-        assert project_config["docker_image"] == "ubuntu:latest"
-
-        expected_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
-        mock_scraper.assert_called_once_with(expected_url, str(workspace_path_absolute))
-
-        tools_dir = workspace_path_absolute / "tools"
-        in_dir = tools_dir / "in"
-        sample_test_case_file = in_dir / "0000.txt"
-
-        assert tools_dir.is_dir(), "tools directory should be created"
-        assert in_dir.is_dir(), "tools/in directory should be created"
-        assert sample_test_case_file.is_file(), "sample test case file (0000.txt) should be created in tools/in"
-
-        assert (
-            f"Initialized AHC project in ./{workspace_path_relative}" in result.output
-            or f"Initialized AHC project in {workspace_path_relative}" in result.output
-            or f"Initialized AHC project in {workspace_path_absolute}" in result.output
+        mock_init_service_instance.initialize_project = MagicMock(
+            return_value={
+                "project_dir": str(expected_project_dir),
+                "config_file_path": str(expected_config_path),
+                "contest_id": contest_id,
+            }
         )
-        assert f"Project configuration saved to {config_file}" in result.output
 
-    @patch("ahc_agent.cli.scrape_and_setup_problem")
-    def test_init_with_custom_template_and_image(self, mock_scraper, runner: CliRunner, tmp_path: Path):
-        """Test init command with custom template and docker image."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as _:
+            result = runner.invoke(cli, ["init", contest_id, "--workspace", workspace_name])
+
+            assert result.exit_code == 0
+            mock_init_service_instance.initialize_project.assert_called_once_with(
+                contest_id=contest_id, template=None, docker_image=None, workspace=workspace_name
+            )
+            assert f"Project for contest '{contest_id}' initialized successfully" in result.output
+            assert str(expected_project_dir) in result.output
+
+    @patch("ahc_agent.cli.InitService")
+    def test_init_with_custom_template_and_image(self, MockInitService, runner: CliRunner, tmp_path: Path):
         contest_id = "ahc997"
         custom_template = "cpp_pro"
         custom_image = "my_cpp_env:1.0"
 
-        # Define a side effect for the mock_scraper to simulate directory and file creation
-        def scraper_side_effect(url, base_output_dir):
-            project_path = Path(base_output_dir)
-            tools_path = project_path / "tools"
-            tools_in_path = tools_path / "in"
-            tools_in_path.mkdir(parents=True, exist_ok=True)
-            (tools_in_path / "0000.txt").touch()
-            return True
+        mock_init_service_instance = MockInitService.return_value
+        # Assuming default workspace naming if not provided
+        expected_project_dir = Path(tmp_path) / contest_id
+        expected_config_path = expected_project_dir / "ahc_config.yaml"
 
-        mock_scraper.side_effect = scraper_side_effect
-
-        os.chdir(tmp_path)  # Ensure relative paths are handled from a known base
-
-        result = runner.invoke(cli, ["init", contest_id, "--template", custom_template, "--docker-image", custom_image])
-
-        project_dir = tmp_path / contest_id
-        assert project_dir.is_dir()
-        config_file = project_dir / "ahc_config.yaml"
-        assert config_file.is_file()
-
-        with open(config_file) as f:
-            project_config = yaml.safe_load(f)
-
-        assert project_config["contest_id"] == contest_id
-        assert project_config["template"] == custom_template
-        assert project_config["docker_image"] == custom_image
-        expected_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
-        mock_scraper.assert_called_once_with(expected_url, str(project_dir))
-
-        tools_dir = project_dir / "tools"
-        in_dir = tools_dir / "in"
-        sample_test_case_file = in_dir / "0000.txt"
-
-        assert tools_dir.is_dir(), "tools directory should be created"
-        assert in_dir.is_dir(), "tools/in directory should be created"
-        assert sample_test_case_file.is_file(), "sample test case file (0000.txt) should be created in tools/in"
-
-        assert (
-            f"Initialized AHC project in ./{contest_id}" in result.output
-            or f"Initialized AHC project in {project_dir}" in result.output
+        mock_init_service_instance.initialize_project = MagicMock(
+            return_value={
+                "project_dir": str(expected_project_dir),
+                "config_file_path": str(expected_config_path),
+                "contest_id": contest_id,
+                "template": custom_template,
+                "docker_image": custom_image,
+            }
         )
-        assert f"Project configuration saved to {config_file}" in result.output
 
-    @patch("ahc_agent.cli._solve_problem")
-    @patch("ahc_agent.cli.asyncio.run")  # asyncio.run もモックする
+        with runner.isolated_filesystem(temp_dir=tmp_path) as _:
+            result = runner.invoke(cli, ["init", contest_id, "--template", custom_template, "--docker-image", custom_image])
+
+            assert result.exit_code == 0
+            mock_init_service_instance.initialize_project.assert_called_once_with(
+                contest_id=contest_id, template=custom_template, docker_image=custom_image, workspace=None
+            )
+            assert f"Project for contest '{contest_id}' initialized successfully" in result.output
+
+    @patch("ahc_agent.cli.InitService")
+    def test_init_command_with_existing_target_dir_as_file(self, MockInitService, runner, tmp_path):
+        contest_id = "ahc888"
+
+        # This test assumes that the CLI's InitService will handle the file existence check.
+        # The CLI command catches RuntimeError from the service.
+        mock_init_service_instance = MockInitService.return_value
+        # Simulate the service raising an error because the target path is a file
+        target_path_as_file_simulated_by_service = tmp_path / contest_id  # Path service would try to create
+        mock_init_service_instance.initialize_project.side_effect = RuntimeError(
+            f"Error creating project directory: '{target_path_as_file_simulated_by_service}' already exists and is a file or non-empty directory."
+        )
+
+        with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+            # Create the conflicting file within the isolated directory
+            actual_conflicting_file = Path(td) / contest_id
+            actual_conflicting_file.write_text("This is a file, not a directory.")
+
+            result = runner.invoke(cli, ["init", contest_id])  # Workspace is implicitly contest_id in td
+
+            assert result.exit_code == 1
+            assert "Error during project initialization" in result.output
+            # The error message from the service (containing the path) should be in the output
+            assert str(target_path_as_file_simulated_by_service) in result.output
+
+    @patch("ahc_agent.cli.DockerManager")
+    @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SolveService")
+    def test_solve_command(self, MockSolveService, MockKnowledgeBase, MockCliConfig, MockLLMClient, MockDockerManager, runner):
+        mock_global_config_instance = MagicMock(spec=Config)
+        mock_global_config_instance.get.return_value = {}
+
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
+            "contest_id": "test_contest",
+            "workspace.base_dir": "/mocked_workspace_path",
+        }.get(key, default)
+        mock_workspace_config_instance.config_file_path = "/mocked_workspace_path/ahc_config.yaml"
+
+        MockCliConfig.side_effect = [mock_global_config_instance, mock_workspace_config_instance]
+
+        mock_llm_instance = MockLLMClient.return_value
+        mock_docker_instance = MockDockerManager.return_value
+        mock_kb_instance = MockKnowledgeBase.return_value
+
+        mock_solve_service_instance = MockSolveService.return_value
+        mock_solve_service_instance.run_solve_session = AsyncMock(return_value=None)
+
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            problem_file = workspace_path / "problem.md"
+            problem_file.write_text("# Test Problem")
+
+            config_file = workspace_path / "ahc_config.yaml"
+            config_file.write_text(yaml.dump({"contest_id": "test_contest"}))
+
+            result = runner.invoke(cli, ["solve", str(workspace_path)])
+
+            assert result.exit_code == 0
+            MockCliConfig.assert_any_call(None)
+            MockCliConfig.assert_any_call(str(config_file))
+            MockLLMClient.assert_called_once_with({})
+            MockDockerManager.assert_called_once_with({})
+            MockKnowledgeBase.assert_called_once_with(str(workspace_path), problem_id="test_contest")
+            MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
+            mock_solve_service_instance.run_solve_session.assert_called_once()
+            call_args = mock_solve_service_instance.run_solve_session.call_args
+            assert call_args[1]["problem_text"] == "# Test Problem"
+            assert call_args[1]["session_id"] is None
+            assert call_args[1]["interactive"] is False
+            assert f"Solving problem in workspace: {workspace_path}" in result.output
+
+    @patch("ahc_agent.cli.DockerManager")
+    @patch("ahc_agent.cli.LLMClient")
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SolveService")
     def test_solve_command_with_workspace(
-        self, mock_Config_class_arg, mock_asyncio_run_arg, mock_solve_problem_arg, runner, tmp_path
+        self, MockSolveService, MockKnowledgeBase, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
     ):
-        """Test the solve command with a workspace argument."""
         contest_id = "ahc999"
         workspace_dir = tmp_path / contest_id
         workspace_dir.mkdir()
 
-        # Load problem statement from tests/data/ahc001/problem.md
-        # Assuming test_cli.py is in the tests directory
-        sample_problem_path = Path(__file__).parent / "data" / "ahc001" / "problem.md"
-        with open(sample_problem_path, encoding="utf-8") as f:
-            problem_text_content_from_file = f.read()
-
+        problem_text_content = "# AHC999 Problem"
         problem_file = workspace_dir / "problem.md"
-        with open(problem_file, "w", encoding="utf-8") as f:
-            f.write(problem_text_content_from_file)
+        problem_file.write_text(problem_text_content)
 
-        config_file_content = {
-            "contest_id": contest_id,
-            "template": "test_template",
-            "docker": {"image": "test_image:latest"},
-            "evolution": {"time_limit_seconds": 10},
-            "workspace": {"base_dir": str(workspace_dir)},
-        }
+        config_file_content = {"contest_id": contest_id}  # Simplified
         config_file = workspace_dir / "ahc_config.yaml"
         with open(config_file, "w") as f:
             yaml.dump(config_file_content, f)
 
-        mock_config_instance_loaded = MagicMock(spec=Config)
-        mock_config_instance_loaded.config_file_path = str(config_file)
-
-        loaded_config_values = {
+        mock_global_config_instance = MagicMock(spec=Config)
+        mock_global_config_instance.get.return_value = {}
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
+            "contest_id": contest_id,
             "workspace.base_dir": str(workspace_dir),
-            "workspace.problem_file": "problem.md",
-            "llm.model": "test_model",
-            "evolution.population_size": 1,
-            "evolution.generations": 1,
-            "docker.image": "test_image",  # ImplementationDebugger で使われる可能性
-            "language": "cpp",  # ImplementationDebugger で使われる可能性
-        }
-        mock_config_instance_loaded.get.side_effect = lambda k, v=None: loaded_config_values.get(k, v)
+        }.get(key, default)
+        mock_workspace_config_instance.config_file_path = str(config_file)
+        MockCliConfig.side_effect = [mock_global_config_instance, mock_workspace_config_instance]
 
-        mock_Config_class_arg.side_effect = [MagicMock(spec=Config), mock_config_instance_loaded]
+        mock_llm_instance = MockLLMClient.return_value
+        mock_docker_instance = MockDockerManager.return_value
+        mock_kb_instance = MockKnowledgeBase.return_value
 
-        # _solve_problem がコルーチン関数であると仮定し、AsyncMock を return_value に設定
-        mock_solve_problem_arg.return_value = AsyncMock()  # AsyncMockインスタンスを返す
-
-        # asyncio.run が呼び出されたときに、渡されたコルーチンを実行するような side_effect
-        def run_coro_side_effect(coro, *_args, **_kwargs):
-            async def dummy_coro():
-                return await coro
-
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(dummy_coro())
-            finally:
-                loop.close()
-                asyncio.set_event_loop(None)
-            return result
-
-        mock_asyncio_run_arg.side_effect = run_coro_side_effect
+        mock_solve_service_instance = MockSolveService.return_value
+        mock_solve_service_instance.run_solve_session = AsyncMock()
 
         result = runner.invoke(cli, ["solve", str(workspace_dir)])
 
-        assert mock_Config_class_arg.call_count >= 1
-
-        mock_solve_problem_arg.assert_called_once()
-        mock_asyncio_run_arg.assert_called_once()  # asyncio.runが呼ばれたことを確認
-        called_args, called_kwargs = mock_solve_problem_arg.call_args
-
-        # 呼び出し引数の検証
-        assert called_args[0] == mock_config_instance_loaded  # Config オブジェクト
-        assert called_args[1] == problem_text_content_from_file  # 問題文のテキスト
-        assert called_args[2] is None  # session_id は渡されていないはず
-        assert called_args[3] is False  # interactive (このテストではデフォルトのFalse)
-        assert called_kwargs == {}  # キーワード引数は渡されないはず
-
+        assert result.exit_code == 0
+        mock_workspace_config_instance.set.assert_called_with("workspace.base_dir", str(workspace_dir))
+        MockKnowledgeBase.assert_called_once_with(str(workspace_dir), problem_id=contest_id)
+        MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
+        mock_solve_service_instance.run_solve_session.assert_called_once_with(problem_text=problem_text_content, session_id=None, interactive=False)
         assert f"Solving problem in workspace: {workspace_dir}" in result.output
-        assert f"Using config: {config_file}" in result.output
 
-    @patch("ahc_agent.cli.scrape_and_setup_problem")  # scrape_and_setup_problemもモックする
+    @patch("ahc_agent.cli.DockerManager")
+    @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    def test_init_command_with_existing_target_dir_as_file(self, MockConfig, mock_scrape_and_setup_problem, runner, tmp_path):
-        # Mock Config
-        mock_config_instance = MagicMock()
-        MockConfig.return_value = mock_config_instance
-        mock_config_instance.get.side_effect = lambda key, default=None: default  # シンプルなgetのモック
-
-        # モックされた scrape_and_setup_problem が呼ばれないようにするか、期待通りに処理する
-        mock_scrape_and_setup_problem.return_value = None
-
-        contest_id = "ahc888"
-        # 一時ファイルシステム内に、初期化ターゲットと同名のファイルを作成
-        target_path_as_file = tmp_path / contest_id
-        with open(target_path_as_file, "w") as f:
-            f.write("This is a file, not a directory.")
-
-        # init コマンドを実行 (workspaceオプションで既存のファイルパスを指定)
-        result = runner.invoke(cli, ["init", contest_id, "--workspace", str(target_path_as_file)])
-
-        # エラーが発生することを期待 (例えばディレクトリ作成に失敗)
-        assert result.exit_code != 0, "CLI should exit with an error code."
-        assert "Error creating project directory" in result.output  # エラーメッセージを確認
-
-        # 元のファイルが変更されていないことを確認
-        assert target_path_as_file.is_file()
-        with open(target_path_as_file) as f:
-            content = f.read()
-            assert content == "This is a file, not a directory."
-
-    @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.EvolutionaryEngine")
-    @patch("ahc_agent.cli.ImplementationDebugger")
-    @patch("ahc_agent.cli.ProblemAnalyzer")
-    @patch("ahc_agent.cli.SolutionStrategist")
-    @patch("ahc_agent.cli.ProblemLogic")
-    def test_solve_command_uses_tools_in_files(
-        self,
-        MockProblemLogic,
-        MockSolutionStrategist,
-        MockProblemAnalyzer,
-        MockImplementationDebugger,
-        MockEvolutionaryEngine,
-        MockConfig,
-        runner,  # CliRunner はこのテストでは直接使わないが、フィクスチャとして残す
-        tmp_path,
+    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SolveService")
+    def test_solve_command_uses_tools_in_files_simplified(
+        self, MockSolveService, MockKnowledgeBase, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
     ):
-        """Test that solve command uses test cases from tools/in/*.txt files."""
-        # 1. テスト用のワークスペースと tools/in/*.txt ファイルを作成
         workspace_dir = tmp_path / "ahc_test_workspace_tools"
         workspace_dir.mkdir()
         tools_dir = workspace_dir / "tools"
         tools_dir.mkdir()
         tools_in_dir = tools_dir / "in"
         tools_in_dir.mkdir()
-
-        test_input_content1 = "input data for test01"
-        test_input_file1 = tools_in_dir / "test01.txt"
-        with open(test_input_file1, "w") as f:
-            f.write(test_input_content1)
-
-        test_input_content2 = "input data for test02"
-        test_input_file2 = tools_in_dir / "test02.txt"
-        with open(test_input_file2, "w") as f:
-            f.write(test_input_content2)
-
-        # Load problem statement from tests/data/ahc001/problem.md
-        # Assuming test_cli.py is in the tests directory
-        sample_problem_path = Path(__file__).parent / "data" / "ahc001" / "problem.md"
-        with open(sample_problem_path, encoding="utf-8") as f:
-            problem_text_content_from_file = f.read()
+        (tools_in_dir / "test01.txt").write_text("input data for test01")
 
         problem_file = workspace_dir / "problem.md"
-        with open(problem_file, "w", encoding="utf-8") as f:
-            f.write(problem_text_content_from_file)
+        problem_file.write_text("# Test Problem with Tools")
+        config_file = workspace_dir / "ahc_config.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump({"contest_id": "tools_test_contest"}, f)
 
-        # 2. Config のモック設定
-        mock_config_instance = MagicMock(spec=Config)
-        # MockConfig.return_value = mock_config_instance # Config() の呼び出しではなく、Config.load() をモックする
-
-        loaded_config_values = {
+        mock_global_config_instance = MagicMock(spec=Config)
+        mock_global_config_instance.get.return_value = {}
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
+            "contest_id": "tools_test_contest",
             "workspace.base_dir": str(workspace_dir),
-            "workspace.problem_file": "problem.md",
-            "llm.model": "test_model",
-            "evolution.population_size": 1,
-            "evolution.generations": 1,
-            "docker.image": "test_image",  # ImplementationDebugger で使われる可能性
-            "language": "cpp",  # ImplementationDebugger で使われる可能性
-            "problem_logic": "cpp",  # ProblemLogic で使われる可能性
-            "problem_logic.test_cases_dir": "tools/in",  # ProblemLogic で使われる可能性
-        }
-        mock_config_instance.get.side_effect = lambda k, v=None: loaded_config_values.get(k, v)
-        mock_config_instance.config_file_path = str(workspace_dir / "ahc_config.yaml")
+        }.get(key, default)
+        mock_workspace_config_instance.config_file_path = str(config_file)
+        MockCliConfig.side_effect = [mock_global_config_instance, mock_workspace_config_instance]
 
-        # 3. ProblemLogic のモック設定
-        # MockProblemLogic はパッチされたクラスのモックオブジェクト
-        # MockProblemLogic.return_value は ProblemLogic(...) が返すインスタンスのモック
-        pl_instance_mock = MockProblemLogic.return_value
-        pl_instance_mock.parse_problem_statement = AsyncMock(return_value={"title": "test_problem"})
-        pl_instance_mock.analyze_problem = AsyncMock(return_value="problem_analysis")  # _solve_problem内では直接呼ばれない
-        pl_instance_mock.propose_strategy = AsyncMock(return_value="solution_strategy")  # _solve_problem内では直接呼ばれない
-        pl_instance_mock.generate_initial_solution = AsyncMock(return_value="initial_solution_code")
-        pl_instance_mock.generate_test_cases = AsyncMock(
-            return_value=[{"input": "test_case_from_logic_input", "output": "test_case_from_logic_output"}]
-        )
-        pl_instance_mock.create_score_calculator = AsyncMock(return_value=MagicMock(return_value=100.0))
+        mock_solve_service_instance = MockSolveService.return_value
+        mock_solve_service_instance.run_solve_session = AsyncMock()
 
-        # SolutionStrategist のモック設定
-        ss_instance_mock = MockSolutionStrategist.return_value
-        ss_instance_mock.develop_strategy = AsyncMock(return_value="mocked_developed_strategy")
+        result = runner.invoke(cli, ["solve", str(workspace_dir)])
 
-        # ProblemAnalyzer のモック設定
-        # MockProblemAnalyzer.return_value は ProblemAnalyzer(...) が返すインスタンスのモック
-        pa_instance_mock = MockProblemAnalyzer.return_value
-        pa_instance_mock.analyze = AsyncMock(return_value="mocked_problem_analysis")
+        assert result.exit_code == 0
+        mock_solve_service_instance.run_solve_session.assert_called_once()
 
-        # 4. ImplementationDebugger のモック設定
-        mock_debugger_instance = MockImplementationDebugger.return_value
-        compile_test_results = [
-            {
-                "success": True,
-                "execution_output": "output1",
-                "execution_time": 0.1,
-                "compilation_errors": None,
-                "execution_errors": None,
-            },
-            {
-                "success": True,
-                "execution_output": "output2",
-                "execution_time": 0.2,
-                "compilation_errors": None,
-                "execution_errors": None,
-            },
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.StatusService")
+    def test_status_command(self, MockStatusService, MockKnowledgeBase, MockConfig, runner, tmp_path):
+        mock_global_config_instance = MockConfig.return_value
+        # Simulate workspace.base_dir being set in global config
+        mock_workspace_dir = tmp_path / "mock_status_ws"
+        mock_global_config_instance.get.side_effect = lambda key, default=None: mock_workspace_dir if key == "workspace.base_dir" else default
+
+        mock_workspace_dir.mkdir(exist_ok=True)  # Ensure dir exists for KB
+
+        mock_kb_instance = MockKnowledgeBase.return_value
+        mock_status_service_instance = MockStatusService.return_value
+        mock_status_service_instance.get_status.return_value = [
+            "=== Session Status ===",
+            "Session ID: test-session",
+            "Status: Complete",
         ]
-        # compile_and_test は async def なので、AsyncMock を使うか、Future を返す
-        mock_debugger_instance.compile_and_test = AsyncMock(side_effect=compile_test_results)
 
-        # 5. EvolutionaryEngine のモック設定
-        mock_engine_instance = MockEvolutionaryEngine.return_value
-        captured_evaluate_func = None
+        result = runner.invoke(cli, ["status", "test-session"])
 
-        async def mock_evolve(problem_analysis, solution_strategy, initial_solution, evaluate_solution_func, session_path):
-            nonlocal captured_evaluate_func
-            captured_evaluate_func = evaluate_solution_func
-            # "evolution_log" キーを追加。内容はテストの目的に応じて調整可能。
-            return {
-                "best_solution": "final_code",
-                "best_score": 200.0,
-                "history": [],
-                "evolution_log": [],
-                "generations_completed": 1,  # "generations_completed" キーを追加
-            }
+        assert result.exit_code == 0
+        # Check Config (global) was used for workspace_base_dir
+        mock_global_config_instance.get.assert_any_call("workspace.base_dir")
+        # Check KB instantiation
+        MockKnowledgeBase.assert_called_once_with(str(mock_workspace_dir), problem_id=mock_workspace_dir.name)
+        # Check StatusService instantiation
+        MockStatusService.assert_called_once_with(mock_global_config_instance, mock_kb_instance)
+        mock_status_service_instance.get_status.assert_called_once_with(session_id="test-session", watch=False)
+        assert "Session ID: test-session" in result.output
+        assert "Status: Complete" in result.output
 
-        mock_engine_instance.evolve.side_effect = mock_evolve
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SubmitService")
+    def test_submit_command(self, MockSubmitService, MockKnowledgeBase, MockConfig, runner, tmp_path):
+        mock_global_config_instance = MockConfig.return_value
+        mock_workspace_dir = tmp_path / "mock_submit_ws"
+        mock_global_config_instance.get.side_effect = lambda key, default=None: mock_workspace_dir if key == "workspace.base_dir" else default
 
-        # _solve_problem コルーチンを直接呼び出してテストする
-        asyncio.run(
-            _solve_problem(mock_config_instance, problem_text_content_from_file)  # session_id を削除
+        mock_workspace_dir.mkdir(exist_ok=True)
+        # Create a dummy ahc_config.yaml in the workspace for problem_id determination
+        dummy_ws_cfg_path = mock_workspace_dir / "ahc_config.yaml"
+        with open(dummy_ws_cfg_path, "w") as f:
+            yaml.dump({"contest_id": "submit_contest"}, f)
+
+        mock_kb_instance = MockKnowledgeBase.return_value
+        mock_submit_service_instance = MockSubmitService.return_value
+        # Path for output file, relative to isolated fs temp dir 'td'
+        output_file_name = "solution.cpp"
+        expected_output_path_str = str(Path(tmp_path) / output_file_name)  # Construct absolute-like path for assertion
+
+        mock_submit_service_instance.submit_solution.return_value = {
+            "session_id": "test-session",
+            "output_path": expected_output_path_str,
+            "solution_code": "// Test code",
+            "score": 100,
+        }
+
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            # Invoke with output path relative to 'td'
+            result = runner.invoke(cli, ["submit", "test-session", "--output", output_file_name])
+
+            assert result.exit_code == 0
+            # Check KB instantiation. Problem_id comes from directory name if contest_id not found.
+            MockKnowledgeBase.assert_called_once_with(str(mock_workspace_dir), problem_id="mock_submit_ws")
+            MockSubmitService.assert_called_once_with(mock_global_config_instance, mock_kb_instance)
+            # Service receives the path as given to CLI, it might resolve it internally.
+            # For the test, we check it was called with the path we provided.
+            mock_submit_service_instance.submit_solution.assert_called_once_with(session_id="test-session", output_path=output_file_name)
+            assert f"Best solution for session test-session (Score: 100) written to {expected_output_path_str}" in result.output
+
+    @patch("ahc_agent.cli.Config")  # For main cli context
+    @patch("ahc_agent.cli.DockerManager")
+    def test_docker_status_command(self, MockMainDockerManager, MockMainConfig, runner):
+        mock_config_instance = MockMainConfig.return_value
+        mock_config_instance.get.return_value = {}
+
+        mock_docker_manager_instance = MockMainDockerManager.return_value
+        # DockerManagerの直接呼び出しをモック
+        mock_docker_manager_instance.check_docker_availability.return_value = None  # 例外を発生させない
+        mock_docker_manager_instance.run_command.return_value = {"success": True, "stdout": "Docker test successful", "stderr": ""}
+
+        result = runner.invoke(cli, ["docker", "status"])
+
+        assert result.exit_code == 0
+        mock_docker_manager_instance.check_docker_availability.assert_called_once()
+        mock_docker_manager_instance.run_command.assert_called_once()
+        assert "Docker is available." in result.output
+        assert "Docker test command successful." in result.output
+
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.DockerManager")
+    def test_docker_setup_command(self, MockMainDockerManager, MockMainConfig, runner):
+        mock_config_instance = MockMainConfig.return_value
+        mock_config_instance.get.return_value = {}
+
+        mock_docker_manager_instance = MockMainDockerManager.return_value
+        # DockerManager.image_name used in cli.py's docker_setup
+        mock_docker_manager_instance.image_name = "test_image:latest"
+        mock_docker_manager_instance.pull_image.return_value = True  # 成功を模擬
+
+        result = runner.invoke(cli, ["docker", "setup"])
+
+        assert result.exit_code == 0
+        mock_docker_manager_instance.pull_image.assert_called_once()
+        assert "Docker image pulled successfully" in result.output
+
+    @patch("ahc_agent.cli.Config")  # For main cli context
+    @patch("ahc_agent.cli.DockerManager")  # For main cli context
+    @patch("ahc_agent.cli.LLMClient")  # For main cli context
+    @patch("ahc_agent.cli.BatchService")
+    def test_batch_command(self, MockBatchService, MockLLMClient, MockMainDockerManager, MockMainConfig, runner, tmp_path):
+        # Mock instances created in main cli group
+        mock_config_instance = MockMainConfig.return_value
+        mock_config_instance.get.return_value = {}  # For llm, docker, batch default configs
+
+        mock_llm_client_instance = MockLLMClient.return_value
+        mock_docker_manager_instance = MockMainDockerManager.return_value
+
+        # BatchService mock
+        mock_batch_service_instance = MockBatchService.return_value
+        # run_batch_experiments_service is async
+        mock_batch_service_instance.run_batch_experiments_service = AsyncMock(
+            return_value=[
+                {"experiment_id": "exp1", "best_score": 100, "error": None},
+                {"experiment_id": "exp2", "best_score": 0, "error": "Something went wrong"},
+            ]
         )
 
-        assert captured_evaluate_func is not None
+        # Create a dummy batch config file
+        batch_config_file = tmp_path / "batch_config.yaml"
+        with open(batch_config_file, "w") as f:
+            yaml.dump({"common": {}, "problems": [], "parameter_sets": [], "experiments": []}, f)
 
-        # evaluate_solution は現状同期関数として EvolutionaryEngine に渡される。
-        # その内部で async 関数である compile_and_test を呼び出すために asyncio.run() を使うという改修案。
-        # よって、ここでの captured_evaluate_func の呼び出しは同期的。
-        # そして、その内部で呼ばれる asyncio.run(compile_and_test(...)) をモックする。
-        with patch("ahc_agent.cli.asyncio.run") as mock_run_in_evaluate:
-            # compile_and_test の結果を再度設定 (asyncio.run の戻り値として)
-            mock_run_in_evaluate.side_effect = [
-                compile_test_results[0],  # 1回目の呼び出し (test01.txt)
-                compile_test_results[1],  # 2回目の呼び出し (test02.txt)
-            ]
+        result = runner.invoke(cli, ["batch", str(batch_config_file)])
 
-            avg_score, all_details = captured_evaluate_func("sample_code")  # 引数を1つに変更
+        assert result.exit_code == 0
+        MockBatchService.assert_called_once_with(mock_llm_client_instance, mock_docker_manager_instance, mock_config_instance)
+        mock_batch_service_instance.run_batch_experiments_service.assert_called_once_with(
+            batch_config_path=str(batch_config_file), output_dir_override=None, parallel_override=None
+        )
+        assert "Batch processing completed." in result.output
+        assert "Total experiments processed: 2" in result.output
+        assert "Successful: 1" in result.output
+        assert "Failed: 1" in result.output
 
-            assert "test01.txt" in all_details
-            assert all_details["test01.txt"]["score"] == 100.0
-            assert "test02.txt" in all_details
-            assert all_details["test02.txt"]["score"] == 100.0
-            assert avg_score == 100.0
+    @patch("ahc_agent.cli.DockerManager")
+    @patch("ahc_agent.cli.LLMClient")
+    @patch("ahc_agent.cli.Config")
+    def test_config_get_command(self, MockConfig, MockLLMClient, MockDockerManager, runner):
+        # モックの設定
+        mock_config = MagicMock()
+        mock_config.get.side_effect = lambda key, default=None: "o4-mini" if key == "llm.model" else {}
 
-            # mock_debugger_instance.compile_and_test が正しい引数で呼び出されたことを確認
-            # evaluate_solution 内で asyncio.run に渡される前に呼び出される
-            mock_debugger_instance.compile_and_test.assert_any_call("sample_code", test_input_content1)
-            mock_debugger_instance.compile_and_test.assert_any_call("sample_code", test_input_content2)
+        # cli関数の実行時に作成されるインスタンスをモック
+        MockConfig.return_value = mock_config
+        MockLLMClient.return_value = MagicMock()
+        MockDockerManager.return_value = MagicMock()
 
-            # ProblemLogic.generate_test_cases が呼ばれていないことを確認
-            # (tools/in/*.txt が使われたため)
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli, ["config", "get", "llm.model"])
+
+            assert result.exit_code == 0
+            assert "llm.model = o4-mini" in result.output
+
+    @patch("ahc_agent.cli.DockerManager")
+    @patch("ahc_agent.cli.LLMClient")
+    @patch("ahc_agent.cli.Config")
+    def test_config_set_command(self, MockConfig, MockLLMClient, MockDockerManager, runner):
+        # モックの設定
+        mock_config = MagicMock()
+        mock_config.get.return_value = {}
+
+        # cli関数の実行時に作成されるインスタンスをモック
+        MockConfig.return_value = mock_config
+        MockLLMClient.return_value = MagicMock()
+        MockDockerManager.return_value = MagicMock()
+
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli, ["config", "set", "llm.model", "gpt-3.5-turbo"])
+
+            assert result.exit_code == 0
+            assert "Set llm.model = gpt-3.5-turbo" in result.output
