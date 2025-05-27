@@ -121,9 +121,7 @@ class ImplementationDebugger:
 
             # Execute code
             executable_file = "solution"
-            execute_result = self.docker_manager.run_executable(
-                executable_file, work_dir_path, input_file, timeout=self.execution_timeout
-            )
+            execute_result = self.docker_manager.run_executable(executable_file, work_dir_path, input_file, timeout=self.execution_timeout)
 
             if not execute_result["success"]:
                 logger.error(f"Execution failed: {execute_result['stderr']}")
@@ -193,9 +191,7 @@ class ImplementationDebugger:
                 "fixed_code": None,
             }
 
-    async def evaluate_solution(
-        self, code: str, test_cases: List[Dict[str, Any]], work_dir: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def evaluate_solution(self, code: str, test_cases: List[Dict[str, Any]], work_dir: Optional[str] = None) -> Dict[str, Any]:
         """
         Evaluate a solution on multiple test cases.
 
@@ -268,9 +264,7 @@ class ImplementationDebugger:
                 input_path = os.path.join(work_dir_path, input_file)
                 write_file(input_path, test_input)
 
-                execute_result = self.docker_manager.run_executable(
-                    executable_file, work_dir_path, input_file, timeout=self.execution_timeout
-                )
+                execute_result = self.docker_manager.run_executable(executable_file, work_dir_path, input_file, timeout=self.execution_timeout)
 
                 current_code_used_for_this_test_case = code
                 fixed_in_this_iteration = False
@@ -279,9 +273,7 @@ class ImplementationDebugger:
                     logger.warning(f"Execution failed for test case {i}: {execute_result['stderr']}")
                     runtime_errors = execute_result["stderr"]
                     # Attempt to fix runtime error based on this specific test case
-                    fixed_code_rt = await self._fix_runtime_errors(
-                        current_code_used_for_this_test_case, runtime_errors, test_input
-                    )
+                    fixed_code_rt = await self._fix_runtime_errors(current_code_used_for_this_test_case, runtime_errors, test_input)
 
                     if fixed_code_rt != current_code_used_for_this_test_case:
                         logger.info(f"Runtime fix generated for test case {i}. Re-compiling and re-testing.")
@@ -305,9 +297,7 @@ class ImplementationDebugger:
                             else:
                                 logger.warning(f"Execution still failed for test case {i} with runtime-fixed code.")
                         else:
-                            logger.error(
-                                f"Compilation failed for runtime-fixed code on test case {i}: {temp_compile_result['stderr']}"
-                            )
+                            logger.error(f"Compilation failed for runtime-fixed code on test case {i}: {temp_compile_result['stderr']}")
                             # If compilation of a fix fails, revert to original error for this test case
                             # and continue with the original code for subsequent tests unless a global fix was already applied.
                             # This 'execute_result' will be the one from the failed execution before the fix attempt.
@@ -340,10 +330,7 @@ class ImplementationDebugger:
             # Calculate average score
             average_score = total_score / len(test_cases) if test_cases else 0
 
-            logger.info(
-                f"Evaluation complete: {len(test_results)} test cases, "
-                f"total score = {total_score}, average score = {average_score}"
-            )
+            logger.info(f"Evaluation complete: {len(test_results)} test cases, total score = {total_score}, average score = {average_score}")
 
             return {
                 "success": overall_success,

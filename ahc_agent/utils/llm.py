@@ -89,9 +89,7 @@ class LLMClient:
                 # litellm が直接解決できることを期待する。
                 # より厳密には litellm.get_model_info(self.model) なども使えるが、
                 # model_cost が存在チェックとして機能する。
-                qualified_model_name = (
-                    f"{self.provider}/{self.model}" if not self.model.startswith(self.provider + "/") else self.model
-                )
+                qualified_model_name = f"{self.provider}/{self.model}" if not self.model.startswith(self.provider + "/") else self.model
                 if qualified_model_name in litellm.model_cost or self.model in litellm.model_cost:
                     pass  # OK
                 else:

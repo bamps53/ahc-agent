@@ -52,9 +52,7 @@ class SolutionStrategist:
         data_structures = await self._generate_data_structures(problem_analysis, high_level_strategy, algorithm_selection)
 
         # Generate optimization techniques
-        optimization_techniques = await self._generate_optimization_techniques(
-            problem_analysis, high_level_strategy, algorithm_selection
-        )
+        optimization_techniques = await self._generate_optimization_techniques(problem_analysis, high_level_strategy, algorithm_selection)
 
         # Generate implementation plan
         implementation_plan = await self._generate_implementation_plan(
@@ -144,9 +142,7 @@ class SolutionStrategist:
             logger.error(f"Error generating high-level strategy: {e!s}")
             return {"approach": "", "key_insights": [], "solution_phases": [], "expected_challenges": []}
 
-    async def _generate_algorithm_selection(
-        self, problem_analysis: Dict[str, Any], high_level_strategy: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _generate_algorithm_selection(self, problem_analysis: Dict[str, Any], high_level_strategy: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate algorithm selection.
 

@@ -10,9 +10,7 @@ import sys
 from typing import Optional
 
 
-def setup_logging(
-    level: str = "INFO", log_file: Optional[str] = None, log_format: Optional[str] = None, json_format: bool = False
-) -> logging.Logger:
+def setup_logging(level: str = "INFO", log_file: Optional[str] = None, log_format: Optional[str] = None, json_format: bool = False) -> logging.Logger:
     """
     Set up logging.
 

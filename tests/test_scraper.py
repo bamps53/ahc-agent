@@ -59,9 +59,7 @@ def test_fetch_problem_statement_visualizer_link_here(mock_requests_get):
     html_content = HTML_TEMPLATE_TASK_STATEMENT.format(problem_html=HTML_VISUALIZER_LINK_HERE)
     mock_requests_get.return_value = create_mock_response(html_content)
 
-    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement(
-        "https://atcoder.jp/contests/ahc001/tasks/ahc001_a"
-    )
+    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement("https://atcoder.jp/contests/ahc001/tasks/ahc001_a")
 
     assert md_content is not None
     assert filename_suggestion == "ahc001_a_problem.md"
@@ -72,9 +70,7 @@ def test_fetch_problem_statement_visualizer_link_local(mock_requests_get):
     html_content = HTML_TEMPLATE_TASK_STATEMENT.format(problem_html=HTML_VISUALIZER_LINK_LOCAL)
     mock_requests_get.return_value = create_mock_response(html_content)
 
-    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement(
-        "https://atcoder.jp/contests/ahc002/tasks/ahc002_a"
-    )
+    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement("https://atcoder.jp/contests/ahc002/tasks/ahc002_a")
 
     assert md_content is not None
     assert filename_suggestion == "ahc002_a_problem.md"
@@ -85,9 +81,7 @@ def test_fetch_problem_statement_visualizer_link_local_version(mock_requests_get
     html_content = HTML_TEMPLATE_TASK_STATEMENT.format(problem_html=HTML_VISUALIZER_LINK_LOCAL_VERSION)
     mock_requests_get.return_value = create_mock_response(html_content)
 
-    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement(
-        "https://atcoder.jp/contests/ahc003/tasks/ahc003_a"
-    )
+    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement("https://atcoder.jp/contests/ahc003/tasks/ahc003_a")
 
     assert md_content is not None
     assert filename_suggestion == "ahc003_a_problem.md"
@@ -98,9 +92,7 @@ def test_fetch_problem_statement_no_visualizer_link(mock_requests_get):
     html_content = HTML_TEMPLATE_TASK_STATEMENT.format(problem_html=HTML_NO_VISUALIZER_LINK)
     mock_requests_get.return_value = create_mock_response(html_content)
 
-    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement(
-        "https://atcoder.jp/contests/ahc004/tasks/ahc004_a"
-    )
+    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement("https://atcoder.jp/contests/ahc004/tasks/ahc004_a")
 
     assert md_content is not None
     assert filename_suggestion == "ahc004_a_problem.md"
@@ -110,9 +102,7 @@ def test_fetch_problem_statement_no_visualizer_link(mock_requests_get):
 def test_fetch_problem_statement_request_error(mock_requests_get):
     mock_requests_get.return_value = create_mock_response("", status_code=404)
 
-    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement(
-        "https://atcoder.jp/contests/ahc005/tasks/ahc005_a"
-    )
+    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement("https://atcoder.jp/contests/ahc005/tasks/ahc005_a")
 
     assert md_content is None
     assert filename_suggestion is None
@@ -123,9 +113,7 @@ def test_fetch_problem_statement_no_task_statement(mock_requests_get):
     html_content = "<html><body><p>No task statement here.</p></body></html>"
     mock_requests_get.return_value = create_mock_response(html_content)
 
-    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement(
-        "https://atcoder.jp/contests/ahc006/tasks/ahc006_a"
-    )
+    md_content, filename_suggestion, visualizer_zip_url = fetch_problem_statement("https://atcoder.jp/contests/ahc006/tasks/ahc006_a")
 
     assert md_content is None
     assert filename_suggestion is None

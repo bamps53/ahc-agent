@@ -172,15 +172,10 @@ def download_and_extract_visualizer(zip_url, target_tools_dir):
                     shutil.rmtree(temp_extract_dir)
                 else:
                     zip_ref.extractall(target_tools_dir)
-                    print(
-                        f"Successfully extracted to {target_tools_dir}/ "
-                        "(archive has multiple items at root or complex structure)"
-                    )
+                    print(f"Successfully extracted to {target_tools_dir}/ (archive has multiple items at root or complex structure)")
             else:
                 zip_ref.extractall(target_tools_dir)
-                print(
-                    f"Successfully extracted to {target_tools_dir}/ (no single top-level directory or multiple items at root)"
-                )
+                print(f"Successfully extracted to {target_tools_dir}/ (no single top-level directory or multiple items at root)")
 
         os.remove(temp_zip_path)
         print(f"Visualizer setup complete in {target_tools_dir}.")

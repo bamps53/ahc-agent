@@ -177,9 +177,7 @@ class DockerManager:
             logger.error(f"Error running command '{command}': {e!s}")
             return {"success": False, "stdout": "", "stderr": str(e), "returncode": -1, "error": str(e)}
 
-    def compile_cpp(
-        self, source_file: str, work_dir: str, output_file: Optional[str] = None, flags: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def compile_cpp(self, source_file: str, work_dir: str, output_file: Optional[str] = None, flags: Optional[str] = None) -> Dict[str, Any]:
         """
         Compile a C++ source file in a Docker container.
 
@@ -223,9 +221,7 @@ class DockerManager:
             logger.error(f"Error compiling C++ file: {e!s}")
             return {"success": False, "stdout": "", "stderr": str(e), "error": str(e)}
 
-    def run_cpp(
-        self, executable_file: str, work_dir: str, input_data: Optional[str] = None, timeout: Optional[int] = None
-    ) -> Dict[str, Any]:
+    def run_cpp(self, executable_file: str, work_dir: str, input_data: Optional[str] = None, timeout: Optional[int] = None) -> Dict[str, Any]:
         """
         Run a compiled C++ executable in a Docker container.
 
@@ -369,9 +365,7 @@ class DockerManager:
             self.logger.error(f"Error copying from container: {e!s}")
             return {"success": False, "stdout": "", "stderr": str(e), "returncode": -1}
 
-    def build_image(
-        self, context_path: str, dockerfile: Optional[str] = None, image_tag: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def build_image(self, context_path: str, dockerfile: Optional[str] = None, image_tag: Optional[str] = None) -> Dict[str, Any]:
         """
         Build a Docker image from a Dockerfile.
 

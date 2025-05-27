@@ -211,9 +211,7 @@ class TestDockerManager:
             "-c",
             "echo 'Test output'",
         ]
-        mock_subprocess_run.assert_called_once_with(
-            expected_docker_cmd, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
-        )
+        mock_subprocess_run.assert_called_once_with(expected_docker_cmd, capture_output=True, text=True, check=False, timeout=docker_manager.timeout)
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_command_with_input(self, mock_subprocess_run, docker_manager, temp_workspace):
@@ -256,9 +254,7 @@ class TestDockerManager:
             "-c",
             command_with_input,
         ]
-        mock_subprocess_run.assert_called_once_with(
-            expected_docker_cmd, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
-        )
+        mock_subprocess_run.assert_called_once_with(expected_docker_cmd, capture_output=True, text=True, check=False, timeout=docker_manager.timeout)
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_cleanup(self, mock_subprocess_run, docker_manager):
@@ -392,9 +388,7 @@ class TestDockerManager:
 
         assert result["success"] is True
         expected_command = ["docker", "cp", host_src_path, f"{container_id}:{container_dest_path}"]
-        mock_subprocess_run.assert_called_once_with(
-            expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
-        )
+        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout)
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_copy_from_container(self, mock_subprocess_run, docker_manager, temp_workspace):
@@ -410,9 +404,7 @@ class TestDockerManager:
 
         assert result["success"] is True
         expected_command = ["docker", "cp", f"{container_id}:{container_src_path}", host_dest_path]
-        mock_subprocess_run.assert_called_once_with(
-            expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout
-        )
+        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout)
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_build_image_existing_dockerfile(self, mock_subprocess_run, docker_manager, temp_workspace):
