@@ -197,32 +197,37 @@ graph TD
     ContestEnvSetup -- interacts --> WebScraper("Web Scraper/Downloader (utils/downloader.py)")
 
     CommandHandler -- "solve, status, stop" --> AgentController("Agent Controller (core/agent_controller.py)")
-    AgentController -- controls --> EvolutionaryEngine("Evolutionary Engine (core/engine.py)")
+    AgentController -- interacts --> SessionManager("SessionManager (core/session_store.py)")
+    SessionManager -- creates/retrieves --> SessionStore("SessionStore (core/session_store.py)")
     AgentController -- interacts --> LLMClient("LLM Client (utils/llm.py)")
-    AgentController -- reads --> KnowledgeBase("Knowledge Base (core/knowledge.py)")
 
-    CommandHandler -- "library" --> AlgorithmLibraryManager("Algorithm Library Manager (core/library_manager.py)")
-    CommandHandler -- "database" --> PastContestDBManager("Past Contest DB Manager (core/database_manager.py)")
+    CommandHandler -- "library, database" --> HeuristicKnowledgeBase("HeuristicKnowledgeBase (core/heuristic_knowledge_base.py)")
 
     EvolutionaryEngine -- uses --> ProblemAnalyzer("Problem Analyzer (core/analyzer.py)")
     EvolutionaryEngine -- uses --> SolutionStrategist("Solution Strategist (core/strategist.py)")
     EvolutionaryEngine -- "uses (AlphaEvolve inspired)" --> LLMClient
     EvolutionaryEngine -- uses --> ImplementationDebugger("Implementation Debugger (core/debugger.py)")
-    EvolutionaryEngine -- "may use" --> AlgorithmLibraryManager
+    EvolutionaryEngine -- "may use (via SolutionStrategist/ProblemAnalyzer)" --> HeuristicKnowledgeBase
 
     ProblemAnalyzer -- uses --> LLMClient
+    ProblemAnalyzer -- "may use" --> HeuristicKnowledgeBase
     SolutionStrategist -- uses --> LLMClient
-    SolutionStrategist -- "may use" --> AlgorithmLibraryManager
-    SolutionStrategist -- "may use" --> PastContestDBManager
+    SolutionStrategist -- "may use" --> HeuristicKnowledgeBase
 
     ImplementationDebugger -- uses --> DockerManager
     ImplementationDebugger -- "uses (for code generation/refinement)" --> LLMClient
 
     LLMClient -- interacts --> External_LLM_API("External LLM API (OpenAI, Gemini, etc.)")
     DockerManager -- interacts --> DockerDaemon("Local Docker Daemon")
-    KnowledgeBase -- interacts --> FileSystem("File System (Logs, Results, Checkpoints)")
-    AlgorithmLibraryManager -- interacts --> FileSystem("Algorithm Library Files (C++ code, metadata JSON)")
-    PastContestDBManager -- interacts --> FileSystem("Past Contest DB (JSON files or SQLite)")
+    SessionStore -- interacts --> FileSystem_SessionData("File System (Session Data: Analysis, Strategy, Solutions, Logs in workspace/problem_id/knowledge/sessions/session_id/)")
+    HeuristicKnowledgeBase -- interacts --> FileSystem_HKBData("File System (Algorithm Library, Past Contest DB, Generic KB data)")
+
+    subgraph Deprecated Components (Functionality absorbed)
+        direction LR
+        AlgorithmLibraryManager_Old[AlgorithmLibraryManager]
+        PastContestDBManager_Old[PastContestDBManager]
+        KnowledgeBase_Old[KnowledgeBase]
+    end
 ```
 
 ### 6.2. 主要コンポーネント詳細
@@ -233,22 +238,29 @@ graph TD
 - **Command Handler (各コマンドに対応するロジック群)**: 各 CLI コマンドの具体的な処理フローを実行し、コアモジュール群を協調させる。
   - **`InitCommandHandler`**: `ContestEnvSetup`を呼び出し、ワークスペース初期化。
   - **`SolveCommandHandler`**: `AgentController`を起動し、バックグラウンドで進化プロセスを開始。
-  - **`StatusCommandHandler`**: `AgentController`や`KnowledgeBase`から情報を取得し表示。
-  - **`StopCommandHandler`**: `AgentController`に停止シグナルを送信。
+  - **`StatusCommandHandler`**: `SessionManager` を介して `SessionStore` から情報を取得し表示。
+  - **`StopCommandHandler`**: `SessionManager` と `SessionStore` を介してセッションステータスを更新。
   - **`ConfigCommandHandler`**: `ConfigurationManager`を介して設定を読み書き。
-  - **`LibraryCommandHandler`**: `AlgorithmLibraryManager` を介してライブラリ情報を表示・検索。
-  - **`DatabaseCommandHandler`**: `PastContestDBManager` を介して過去コンペ情報を検索・表示。
+  - **`LibraryCommandHandler`**: `HeuristicKnowledgeBase` を介してライブラリ情報を表示・検索。
+  - **`DatabaseCommandHandler`**: `HeuristicKnowledgeBase` を介して過去コンペ情報を検索・表示。
 - **Contest Environment Setup (`core/contest_setup.py`)**: `init`コマンドの主要ロジック。指定されたコンペティション ID に基づき、問題文、テスト入力例を含む公式ツール群、ビジュアライザ等を Web から取得 (utils/downloader.py 経由) し、ワークスペースにセットアップ。Docker 環境やテスト用スクリプトも生成。
-- **Agent Controller (`core/agent_controller.py`)**: `solve`コマンドで起動されるメインプロセス。`EvolutionaryEngine`の実行を管理し、ユーザーからの自然言語指示（将来的な機能）を解釈してエンジンに伝達。バックグラウンド実行と状態管理。
-- **Problem Analyzer (`core/analyzer.py`)**: LLM を使い問題文から構造化情報を抽出。
-- **Solution Strategist (`core/strategist.py`)**: LLM を使い解法戦略を立案。必要に応じて `AlgorithmLibraryManager` や `PastContestDBManager` から情報を取得し、戦略に反映させる。
-- **Evolutionary Engine (`core/engine.py`)**: AlphaEvolve の思想に基づき、LLM を主要な進化オペレータとして活用し、解（C++コード）を探索・改善する。コード生成・変異の際に `AlgorithmLibraryManager` のコード片を参照・利用することがある。
+- **Agent Controller (`core/agent_controller.py`)**: `solve`コマンドで起動されるメインプロセス。`EvolutionaryEngine`の実行を管理し、ユーザーからの自然言語指示（将来的な機能）を解釈してエンジンに伝達。`SessionManager` を通じて `SessionStore` とやり取りし、セッション情報を管理する。
+- **Problem Analyzer (`core/analyzer.py`)**: LLM を使い問題文から構造化情報を抽出。必要に応じて `HeuristicKnowledgeBase` から問題インスタンスのスキーマや過去の類似問題の分析結果を参照することがある。
+- **Solution Strategist (`core/strategist.py`)**: LLM を使い解法戦略を立案。`HeuristicKnowledgeBase` から典型アルゴリズムや過去のコンテスト情報を取得し、戦略に反映させる。
+- **Evolutionary Engine (`core/engine.py`)**: AlphaEvolve の思想に基づき、LLM を主要な進化オペレータとして活用し、解（C++コード）を探索・改善する。コード生成・変異の際に `HeuristicKnowledgeBase` のアルゴリズムライブラリを参照することがある。
 - **Implementation Debugger (`core/debugger.py`)**: C++コードの生成支援、コンパイル、実行、デバッグ支援。LLM にエラーメッセージを提示し、修正案を生成させることも含む。
-- **Knowledge Base (`core/knowledge.py`)**: 実験結果、生成された有望なコード片、効果的だったプロンプト、LLM の使用状況（トークン数、コスト）などをファイルシステムに保存・検索。
+- **SessionStore (`core/session_store.py`)**: Manages all data specific to a single problem-solving session. This includes session metadata (ID, status, timestamps), problem analysis, chosen strategy, generated solutions (code, scores), evolution logs, and LLM interaction logs generated during that session. It interacts directly with the file system to store this data in a dedicated directory structure like `workspace/<PROBLEM_ID>/knowledge/sessions/<SESSION_ID>/`.
+
+- **SessionManager (`core/session_store.py`)**: Responsible for the lifecycle of sessions for a specific problem. It handles creating new sessions (which involves creating a new `SessionStore` instance and its initial metadata), retrieving existing `SessionStore` instances by session ID, and listing all available sessions for a problem. It is the primary entry point for CLI commands to interact with session data.
+- **HeuristicKnowledgeBase (`core/heuristic_knowledge_base.py`)**: Manages and provides access to general-purpose and historical knowledge relevant for solving AHC problems. Its primary responsibilities include:
+    - Managing a library of typical algorithms and data structures: storing C++ (or other language) code snippets, their metadata (description, usage, complexity, tags), and providing search/retrieval capabilities. This subsumes the role of the previously conceptualized `AlgorithmLibraryManager`.
+    - Managing a database of past contest solutions and insights: storing information about past AHC problems (metadata, problem characteristics, successful approaches, key ideas, links to editorials or top solutions). This subsumes the role of the previously conceptualized `PastContestDBManager`.
+    - It can also be used to store problem-specific cached data that is not tied to a particular session (e.g., parsed `problem_instance.json`, general analysis results for a problem) if its base directory is configured to a problem's `kb` folder (e.g., `workspace/<PROBLEM_ID>/knowledge/kb/`).
+    It interacts with the file system for storing algorithm files, metadata, past contest data (e.g., in JSON format or an SQLite database), and other generic data. Core components like `SolutionStrategist` and `ProblemAnalyzer` utilize `HeuristicKnowledgeBase` to inform their processes.
 - **LLM Client (`utils/llm.py`)**: `LiteLLM` を介して LLM API との通信を抽象化。トークン数カウント機能も持つ。
 - **Docker Manager (`utils/docker_manager.py`)**: Docker コンテナのライフサイクル管理、コード実行環境の提供。
-- **Algorithm Library Manager (`core/library_manager.py`)**: 典型アルゴリズム・データ構造の C++実装ライブラリを管理。コード片の提供、メタデータ（説明、使い方、計算量など）の管理を行う。ファイルシステム上の特定のディレクトリに格納されたコードファイルとメタデータファイルを読み込む。
-- **Past Contest DB Manager (`core/database_manager.py`)**: 過去の AHC 問題のメタデータ、特徴、解法アプローチなどを格納したデータベース（JSON ファイル群または SQLite）を管理。検索インターフェースを提供する。
+- **Algorithm Library Functionality (within `HeuristicKnowledgeBase`)**: `HeuristicKnowledgeBase` manages the typical algorithm/data structure library, providing search, retrieval, and metadata for code snippets.
+- **Past Contest DB Functionality (within `HeuristicKnowledgeBase`)**: `HeuristicKnowledgeBase` manages the database of past AHC problems and solutions, offering search and retrieval capabilities.
 - **Downloader (`utils/downloader.py`)**: Web ページからファイル（問題文、ツール類）をダウンロードするユーティリティ。必要に応じてスクレイピング機能も持つ。
 
 ### 6.3. データフロー
@@ -263,30 +275,30 @@ graph TD
 6.  ダウンロードしたファイルをワークスペース内の所定の場所 (`problem/`, `tools/tester/`, `tools/visualizer/`など) に展開・配置。
 7.  `DockerManager` を使用して、開発用 Dockerfile や docker-compose.yml を生成。
 8.  テスト実行用のシェルスクリプト (`test.sh`) や Makefile を生成。
-9.  実験記録用のファイル (`experiments.log` や `results.csv` のヘッダなど) を`KnowledgeBase`経由で初期化。
+9.  ワークスペース内の `knowledge/kb` ディレクトリや `knowledge/sessions` ディレクトリが `HeuristicKnowledgeBase` や `SessionManager` によって必要に応じて作成される準備が整う。
 
 #### `solve` コマンド実行時
 
 1.  ユーザーはワークスペース内で `ahc-agent solve` を実行。
-2.  CLI がコマンドを解析し、`SolveCommandHandler` を呼び出す。
-3.  `AgentController` が起動し、セッション用ディレクトリを `WorkspaceManager` に準備させる。
+2.  CLI がコマンドを解析し、`SolveCommandHandler` (または直接 `AgentController`) を呼び出す。
+3.  `AgentController` が起動し、`SessionManager` を使用して現在のセッションに対応する `SessionStore` インスタンスを作成または取得する。
 4.  `EvolutionaryEngine` が初期化される。
-5.  `EvolutionaryEngine` は `ProblemAnalyzer` を使用して問題ファイルを読み込み、LLM で分析、構造化データを生成。
-6.  `EvolutionaryEngine` は `SolutionStrategist` を使用して分析結果に基づき、LLM で戦略を提案（この際、`AlgorithmLibraryManager`や`PastContestDBManager`を参照することがある）。
+5.  `EvolutionaryEngine` は `ProblemAnalyzer` を使用して問題ファイルを読み込み、LLM で分析、構造化データを生成。この分析結果は `SessionStore` に保存される。`ProblemAnalyzer` は `HeuristicKnowledgeBase` を参照して分析を補助することがある。
+6.  `EvolutionaryEngine` は `SolutionStrategist` を使用して分析結果に基づき、LLM で戦略を提案（この際、`HeuristicKnowledgeBase` を参照することがある）。この戦略は `SessionStore` に保存される。
 7.  (対話モードの場合、ユーザーが戦略を選択・調整)
-8.  `EvolutionaryEngine` が初期個体群（コード）を生成 (必要なら `ImplementationDebugger` 経由で LLM 支援、`AlgorithmLibraryManager`参照あり)。
+8.  `EvolutionaryEngine` が初期個体群（コード）を生成 (必要なら `ImplementationDebugger` 経由で LLM 支援、`HeuristicKnowledgeBase` のアルゴリズムライブラリ参照あり)。生成されたコードや関連情報は `SessionStore` に保存される。
 9.  AlphaEvolve 風ループ開始:
-    a. `EvolutionaryEngine` が個体を評価 ( `ImplementationDebugger` を使用し、 `DockerManager` 経由でコードを実行)。スコアは `KnowledgeBase` に記録。
-    b. `EvolutionaryEngine` が LLM を活用して選択、交叉、変異操作を行い、新世代を生成。
-    c. `KnowledgeBase` に進捗や LLM 利用状況を記録。
-10. 終了条件を満たしたら、`AgentController` が最良解を `WorkspaceManager` を通じて所定の場所に保存。
+    a. `EvolutionaryEngine` が個体を評価 ( `ImplementationDebugger` を使用し、 `DockerManager` 経由でコードを実行)。スコアや実行結果は `SessionStore` に記録。
+    b. `EvolutionaryEngine` が LLM を活用して選択、交叉、変異操作を行い、新世代を生成。新個体やLLMとのやり取りのログも `SessionStore` に記録。
+    c. `SessionStore` に進捗や LLM 利用状況を記録。
+10. 終了条件を満たしたら、`AgentController` が最良解を `SessionStore` を通じて最終確定し、その情報はセッションデータとして永続化される。
 
 #### `library show <algorithm_name>` コマンド実行時
 
 1.  ユーザーが `ahc-agent library show dijkstra` を実行。
 2.  CLI がコマンドを解析し、`LibraryCommandHandler` を呼び出す。
-3.  `LibraryCommandHandler` が `AlgorithmLibraryManager` に `dijkstra` の情報を要求。
-4.  `AlgorithmLibraryManager` がファイルシステム上のライブラリファイル群から `dijkstra` のコード片とメタデータを取得。
+3.  `LibraryCommandHandler` が `HeuristicKnowledgeBase` に `dijkstra` の情報を要求。
+4.  `HeuristicKnowledgeBase` がファイルシステム上のライブラリファイル群から `dijkstra` のコード片とメタデータを取得。
 5.  取得した情報を整形し、CLI を通じてユーザーに表示。
 
 ## 7. UI/UX (CLI)
@@ -344,15 +356,15 @@ graph TD
 - **標準出力**: 主要な情報、進捗、ユーザーへのプロンプト (対話モード時)。`status` コマンドの結果。`library`, `database` コマンドの結果。
 - **標準エラー出力**: エラーメッセージ、警告。
 - **ログファイル**:
-  - セッションログ: `workspace/<COMPETITION_ID>/<SESSION_NAME>/logs/session.log` (DEBUG レベル以上の詳細な実行記録、LLM との全プロンプト・レスポンス、各オペレーションの所要時間など)
-  - 実験結果サマリ (CSV 形式): `workspace/<COMPETITION_ID>/results.csv` (セッション名, 開始/終了日時, ベストスコア, 最終世代, 使用主要パラメータ, 総 LLM トークン数, 推定 LLM コストなどを追記)
+  - セッション関連ファイル: `workspace/<COMPETITION_ID>/knowledge/sessions/<SESSION_ID>/` 以下に各種JSONファイル (例: `metadata.json`, `problem_analysis.json`, `solution_strategy.json`, `evolution_log.json`) やLLMとのやり取りログ (`llm_logs/`) が保存される。
+  - 詳細なデバッグログやオペレーショナルログは、`workspace/<COMPETITION_ID>/knowledge/sessions/<SESSION_ID>/logs/session_debug.log` のようなファイルに保存されることを想定 (具体的な実装による)。
+  - 実験結果サマリ (CSV 形式): `workspace/<COMPETITION_ID>/results_summary.csv` (問題IDごとの全セッションのサマリ。セッションID, 開始/終了日時, ベストスコア, 最終世代, 主要パラメータ, 総LLMトークン数, 推定LLMコストなどを追記)
 - **成果物 (ワークスペース内)**:
   - 問題ファイル: `workspace/<COMPETITION_ID>/problem/` (例: `problem.md`, `input_format.txt`)
   - 公式ツール類: `workspace/<COMPETITION_ID>/tools/tester/`, `workspace/<COMPETITION_ID>/tools/visualizer/`
-  - 生成された C++ファイル群: `workspace/<COMPETITION_ID>/<SESSION_NAME>/solutions/gen<世代番号>_id<個体ID>_score<スコア>.cpp`
-  - 各テストケースの標準出力: `workspace/<COMPETITION_ID>/<SESSION_NAME>/outputs/gen<世代番号>_id<個体ID>/<testcase_name>.out`
-  - 各テストケースのスコアファイル: `workspace/<COMPETITION_ID>/<SESSION_NAME>/scores/gen<世代番号>_id<個体ID>/<testcase_name>.score` (テスターが出力する場合)
-  - セッションごとの最終ベスト解: `workspace/<COMPETITION_ID>/<SESSION_NAME>/best_solution.cpp` (シンボリックリンクまたはコピー)
+  - 生成された C++ファイル群: `workspace/<COMPETITION_ID>/knowledge/sessions/<SESSION_ID>/solutions/<SOLUTION_ID>.cpp` (例: `best_gen_10.cpp`)
+  - 各テストケースの標準出力やスコアファイル: これらは一時的なアーティファクトとして `workspace/<COMPETITION_ID>/knowledge/sessions/<SESSION_ID>/eval_artifacts/` などに保存されるか、または `ImplementationDebugger` が直接管理し、最終スコアのみ `SessionStore` に記録される。
+  - セッションごとの最終ベスト解のメタデータは `SessionStore` が管理し、コード自体も `solutions` ディレクトリに保存。
 
 ## 8. データモデル
 
@@ -497,35 +509,32 @@ past_contest_db:
 
 ### 8.4. セッション情報
 
-`AgentController` が管理し、`KnowledgeBase` に記録される。
+`SessionStore` が管理し、セッションディレクトリ内の `metadata.json` (`workspace/<COMPETITION_ID>/knowledge/sessions/<SESSION_ID>/metadata.json`) に記録される。
 
 ```json
 {
-  "session_id": "session_xyz_timestamp",
-  "competition_id": "ahc030",
-  "start_time": "2025-05-23T10:00:00Z",
-  "end_time": "2025-05-23T12:00:00Z",
-  "status": "completed",
-  "problem_file_path": "workspace/ahc030/problem/problem.md",
-  "configuration_snapshot": {},
-  "current_generation": 30,
-  "best_score_history": [
-    { "generation": 0, "score": 5000, "individual_id": "gen00_ind01" },
-    { "generation": 5, "score": 8000, "individual_id": "gen05_ind03" },
-    { "generation": 25, "score": 12672.5, "individual_id": "gen25_ind07" }
-  ],
-  "final_best_individual_id": "gen25_ind07",
-  "total_llm_tokens_used": {
-    "prompt_tokens": 1500000,
-    "completion_tokens": 500000,
-    "total_tokens": 2000000
-  },
-  "estimated_llm_cost_usd": 3.5,
-  "error_message": null
+  "session_id": "unique_session_uuid_or_timestamp",
+  "problem_id": "ahc030", // COMPETITION_ID と同義
+  "created_at": 1679539200.123, // Unix timestamp (float)
+  "updated_at": 1679542800.456, // Unix timestamp (float)
+  "status": "evolution_complete", // 例: "initialized", "analysis_complete", "strategy_complete", "evolution_running", "evolution_complete", "stopped", "error"
+  "problem_title": "Problem Title from AHC030", // problem_analysis.json からの一部冗長化または初期設定
+  "parsed_info": { /* 初期パース情報、problem_textは別ファイルに保存されることも */ },
+  "has_problem_analysis": true,
+  "has_solution_strategy": true,
+  "has_evolution_log": true,
+  "last_solution_id": "best_gen_28", // SessionStoreに保存された最新または最良のソリューションID
+  "best_score": 12750.75, // セッションを通じて達成された最高スコア
+  // configuration_snapshot は session_store 自体には含めず、実行時のConfigオブジェクトから取得するか、
+  // 必要なら別途 session_config.yaml のような形で保存する。
+  // total_llm_tokens_used や estimated_llm_cost_usd も、セッション内のLLMログを集計するか、
+  // または進化ログなどに含めて管理する。
+  "error_message": null // エラー発生時に設定
 }
 ```
+注意: 上記は `SessionStore` が直接管理する `metadata.json` の例。`best_score_history` や `total_llm_tokens_used` のような詳細なトラッキング情報は、`evolution_log.json` や `llm_interaction_log` の集計から得られる。`problem_file_path` はワークスペース構造から自明。
 
-### 8.5. 典型アルゴリズム/ライブラリデータ (例: `library/dijkstra.cpp`, `library/dijkstra.meta.json`)
+### 8.5. 典型アルゴリズム/ライブラリデータ (例: `heuristic_knowledge_base_root/library/dijkstra/dijkstra.cpp`, `heuristic_knowledge_base_root/library/dijkstra/dijkstra.meta.json`)
 
 - **`dijkstra.cpp`**: ダイクストラ法の C++実装コード。ヘッダガードや namespace で適切に分離。
 - **`dijkstra.meta.json`**:
