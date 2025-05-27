@@ -275,6 +275,30 @@ class SessionStore:
                         interactions.append(interaction_data)
         return interactions
 
+    # --- Generic Data Handling for session-specific files ---
+    def save_generic_file_data(self, filename: str, content: str) -> bool:
+        """Saves generic file data directly under the session directory."""
+        file_path = os.path.join(self.session_dir, filename)
+        try:
+            write_file(file_path, content)
+            logger.info(f"Saved generic file data '{filename}' to {file_path} for session {self.session_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving generic file data '{filename}' for session {self.session_id}: {e}")
+            return False
+            
+    def get_generic_file_data(self, filename: str) -> Optional[str]:
+        """Loads generic file data by filename from the session directory."""
+        file_path = os.path.join(self.session_dir, filename)
+        if os.path.exists(file_path):
+            try:
+                return read_file(file_path)
+            except Exception as e:
+                logger.error(f"Error loading generic file data '{filename}' for session {self.session_id}: {e}")
+                return None
+        logger.debug(f"Generic file data '{filename}' not found in session {self.session_id} at {file_path}")
+        return None
+
 class SessionManager:
     def __init__(self, workspace_dir: str, problem_id: str):
         """

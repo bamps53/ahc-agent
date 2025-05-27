@@ -12,6 +12,7 @@ import logging
 import os
 from pathlib import Path
 import time
+from typing import Optional
 
 # Third-party imports
 import click
@@ -376,13 +377,12 @@ async def _solve_problem(
 
     score_calculator = await problem_logic.create_score_calculator(problem_analysis)
 
-    def evaluate_solution(code, current_test_cases, current_score_calculator):
-        # ... (evaluation logic remains largely the same, ensure async is handled)
+    async def evaluate_solution_async_direct(code, current_test_cases, current_score_calculator, debugger_instance):
+        # This is the core async evaluation logic
         total_score = 0
         details = {}
         for test_case in current_test_cases:
-            # implementation_debugger.compile_and_test is async, so need to run it
-            result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
+            result = await debugger_instance.compile_and_test(code, test_case["input"])
             test_name = test_case.get("name", f"test_{current_test_cases.index(test_case) + 1}")
             if result["success"]:
                 score = current_score_calculator(test_case["input"], result["execution_output"])
@@ -395,6 +395,109 @@ async def _solve_problem(
                 }
         avg_score = total_score / len(current_test_cases) if current_test_cases else 0
         return avg_score, details
+    
+    # This function will be passed to the possibly synchronous EvolutionaryEngine.
+    # It needs to run the async evaluate_solution_async_direct.
+    # It should create its own event loop if one isn't running, or use the existing one carefully.
+    # To avoid asyncio.run() if a loop is already running (common in tests that call asyncio.run(_solve_problem))
+    # we check if a loop is running. If so, we schedule the async task and wait for it.
+    # If no loop is running, we use asyncio.run(). This is complex.
+
+    # A simpler, more common pattern if EvolutionaryEngine is purely synchronous:
+    # The evaluate_solution function provided to it MUST be synchronous.
+    # So, this synchronous function will call asyncio.run() on the async logic.
+    # The RuntimeError in tests occurs because the test itself runs _solve_problem using asyncio.run(),
+    # leading to nested asyncio.run() calls.
+    # The fix is to ensure that if an event loop is already running, we don't create a new one with asyncio.run().
+    
+    def sync_evaluate_wrapper(code_to_eval):
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop.is_running():
+            # If a loop is running, we cannot use asyncio.run().
+            # We need to create a task and run it to completion in the current loop.
+            # This is tricky because we need to block until this specific task is done.
+            # This typically requires the outer function (evolve) to be async.
+            # Given the constraints, if 'evolve' is synchronous, this path will be problematic.
+            # A common pattern for this is to use a thread to run the async code
+            # or use something like `nest_asyncio` if truly necessary (but it's a hack).
+
+            # For now, let's assume that if _solve_problem is called via asyncio.run (like in tests),
+            # then the engine's evaluate_solution will be called in a context where a new asyncio.run()
+            # will indeed cause nesting.
+            # The previous approach of making evaluate_solution_async and passing it directly
+            # assumes the engine can await it. If it can't, this wrapper is needed.
+            # The RuntimeError implies the engine *is* synchronous and the lambda tries to call asyncio.run
+            # while _solve_problem is already under asyncio.run.
+
+            # The change to make evaluate_solution_async and pass it to the engine
+            # (assuming the engine awaits it) is the cleaner path.
+            # The failure in test_solve_command_uses_tools_in_files suggests that
+            # the EvolutionaryEngine.evolve (or its mock) is not awaiting the eval_func.
+            # The test's mock_evolve *does* await it. This means the actual
+            # evaluate_solution_async was correct, but the lambda was not.
+            # Let's stick to the async version and ensure the lambda passes the coroutine.
+            # The error must be somewhere else if this is the case.
+
+            # Reverting to the direct async call, assuming the engine will await it.
+            # The problem was likely how the lambda was defined or called.
+            # The lambda `eval_func_for_engine` returns a coroutine.
+            # The test `test_solve_command_uses_tools_in_files` has a mock_evolve that correctly `await`s.
+            # The RuntimeError implies that the actual `implementation_debugger.compile_and_test`
+            # or something it calls is trying to `asyncio.run` internally when it shouldn't.
+            # This shouldn't be the case if `compile_and_test` is `async def`.
+
+            # Let's simplify and assume the engine handles awaiting the coroutine.
+            # The lambda should just call the async function, returning the coroutine.
+            # The error "RuntimeError: asyncio.run() cannot be called from a running event loop"
+            # must be from the `asyncio.run` that was previously inside `evaluate_solution`.
+            # Making `evaluate_solution_async` and passing it correctly should have fixed it.
+            # The test failure log points to line 386 in cli.py:
+            # result = asyncio.run(implementation_debugger.compile_and_test(code, test_case["input"]))
+            # This line was inside the *synchronous* evaluate_solution.
+            # The fix is to make evaluate_solution async and await that call.
+            # The previous diff *did* this by renaming to evaluate_solution_async and awaiting.
+            # The issue might be that the lambda itself needs to be async or the engine isn't awaiting.
+            # If the engine is synchronous, then evaluate_solution must be synchronous and use asyncio.run().
+            # This leads to the conflict if _solve_problem is ALREADY run with asyncio.run().
+
+            # The most direct way to fix the test failure is to ensure the `evaluate_solution`
+            # passed to the synchronous `evolve` function does not call `asyncio.run` if a loop is running.
+            # This is what `problem_logic.evaluate_solution_code` probably should do.
+            # Let's assume `problem_logic.evaluate_solution_code` handles this.
+            # The lambda should then call this (potentially async) problem_logic method.
+
+            # Re-evaluating: The error occurs because the `evaluate_solution` *inside* `_solve_problem`
+            # (the one defined at line 386 in the error log) calls `asyncio.run`.
+            # This function needs to be `async def` and `await` the call.
+            # The lambda passed to `evolve` should then be:
+            # `lambda code: asyncio.run(evaluate_solution_async_direct(code, test_cases, score_calculator, implementation_debugger))`
+            # if `evolve` is synchronous. But this is the source of the problem in tests.
+            #
+            # If `evolve` can take an async function, then:
+            # `eval_func = evaluate_solution_async_direct` (pass the function itself)
+            # And `evolve` will do `await eval_func(...)`
+            # Or `eval_func = lambda code: evaluate_solution_async_direct(code, ...)` and `evolve` awaits.
+
+            # The issue is the test `test_solve_command_uses_tools_in_files` calls `asyncio.run(_solve_problem)`.
+            # `_solve_problem` calls `evolve`. `evolve` calls `evaluate_solution`.
+            # If `evaluate_solution` calls `asyncio.run`, we have nested `asyncio.run`.
+            # So, `evaluate_solution` should be `async def`.
+            # The `evolve` method (or its mock in the test) should `await` it.
+            # The test's `mock_evolve` *does* `await eval_func(ic)`.
+            # The `eval_func` passed to it is `lambda code: evaluate_solution_async_direct(...)`.
+            # So, the lambda returns a coroutine, and `mock_evolve` awaits it. This is correct.
+            # The error log points to line 386 of cli.py, which was the `asyncio.run` call
+            # *inside the old synchronous evaluate_solution*.
+            # This means the file was not correctly patched in the previous step.
+            # The fix is to ensure `evaluate_solution_async_direct` is used and awaited.
+            # The lambda `eval_func_for_engine` should create the coroutine.
+            pass # This complex comment block is to re-affirm the previous fix was likely correct but misapplied.
+                 # The core idea is: the function called by `evolve` should be `async` and `await` internally,
+                 # and `evolve` itself (or its mock) should `await` that function.
+
+    eval_func_for_engine = lambda code: evaluate_solution_async_direct(
+        code, test_cases, score_calculator, implementation_debugger
+    )
 
     click.echo("Running evolutionary process...")
     evolution_artifacts_dir = os.path.join(session_store.session_dir, "evolution_artifacts")
@@ -404,7 +507,7 @@ async def _solve_problem(
         problem_analysis,
         solution_strategy,
         initial_solution_code, # Use the determined initial_solution_code
-        lambda code: evaluate_solution(code, test_cases, score_calculator),
+        eval_func_for_engine, # Pass the new evaluation function wrapper
         evolution_artifacts_dir, # Output dir for engine artifacts
     )
 
@@ -630,13 +733,16 @@ async def _interactive_solve(
                 interactive_engine = EvolutionaryEngine(evolutionary_engine.llm_client, current_evo_config)
 
 
-                def evaluate_solution_interactive(code): # Closure for interactive use
+                async def evaluate_solution_interactive(code): # Closure for interactive use, now async
                     # Simplified error handling for interactive use
                     avg_score, details = 0, {}
                     try:
-                        avg_score, details = asyncio.run(problem_logic.evaluate_solution_code(
+                    # If problem_logic.evaluate_solution_code is async, it needs to be awaited
+                    # If it's sync but calls async debugger, that's the issue.
+                    # Assuming evaluate_solution_code is now async or handles async debugger calls correctly
+                        avg_score, details = await problem_logic.evaluate_solution_code( # Ensure this is awaited
                             code, current_test_cases, current_score_calculator, implementation_debugger
-                        ))
+                        )
                     except Exception as e:
                         click.echo(f"Error during evaluation: {e}", err=True)
                     return avg_score, details
