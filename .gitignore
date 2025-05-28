@@ -125,3 +125,5 @@ workspace
 
 # Repomix
 repomix-output.xml
+repomix.config.json
+.repomixignore
