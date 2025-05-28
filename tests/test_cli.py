@@ -317,16 +317,23 @@ class TestCLI:
         assert result.exit_code == 0
         mock_solve_service_instance.run_solve_session.assert_called_once()
 
+    @patch("ahc_agent.cli.os")
     @patch("ahc_agent.cli.Config")
     @patch("ahc_agent.cli.KnowledgeBase")
     @patch("ahc_agent.cli.StatusService")
-    def test_status_command(self, MockStatusService, MockKnowledgeBase, MockConfig, runner, tmp_path):
+    def test_status_command(self, MockStatusService, MockKnowledgeBase, MockConfig, MockOS, runner, tmp_path):
         mock_global_config_instance = MockConfig.return_value
-        # Simulate workspace.base_dir being set in global config
+        # テスト用のワークスペースディレクトリを作成
         mock_workspace_dir = tmp_path / "mock_status_ws"
-        mock_global_config_instance.get.side_effect = lambda key, default=None: mock_workspace_dir if key == "workspace.base_dir" else default
-
         mock_workspace_dir.mkdir(exist_ok=True)  # Ensure dir exists for KB
+
+        # カレントディレクトリのモックを設定
+        MockOS.getcwd.return_value = str(mock_workspace_dir)
+
+        # ワークスペース固有の設定をモック
+        mock_ws_config = MockConfig.return_value
+        mock_ws_config.get.side_effect = lambda key, default=None: mock_workspace_dir.name if key == "contest_id" else default
+        MockConfig.side_effect = [mock_global_config_instance, mock_ws_config]
 
         mock_kb_instance = MockKnowledgeBase.return_value
         mock_status_service_instance = MockStatusService.return_value
@@ -336,11 +343,12 @@ class TestCLI:
             "Status: Complete",
         ]
 
+        # ワークスペース引数を指定せずにstatusコマンドを実行(カレントディレクトリを使用)
         result = runner.invoke(cli, ["status", "test-session"])
 
         assert result.exit_code == 0
-        # Check Config (global) was used for workspace_base_dir
-        mock_global_config_instance.get.assert_any_call("workspace.base_dir")
+        # カレントディレクトリが取得されたことを確認
+        MockOS.getcwd.assert_called_once()
         # Check KB instantiation
         MockKnowledgeBase.assert_called_once_with(str(mock_workspace_dir), problem_id=mock_workspace_dir.name)
         # Check StatusService instantiation
@@ -349,19 +357,27 @@ class TestCLI:
         assert "Session ID: test-session" in result.output
         assert "Status: Complete" in result.output
 
+    @patch("ahc_agent.cli.os")
     @patch("ahc_agent.cli.Config")
     @patch("ahc_agent.cli.KnowledgeBase")
     @patch("ahc_agent.cli.SubmitService")
-    def test_submit_command(self, MockSubmitService, MockKnowledgeBase, MockConfig, runner, tmp_path):
+    def test_submit_command(self, MockSubmitService, MockKnowledgeBase, MockConfig, MockOS, runner, tmp_path):
         mock_global_config_instance = MockConfig.return_value
         mock_workspace_dir = tmp_path / "mock_submit_ws"
-        mock_global_config_instance.get.side_effect = lambda key, default=None: mock_workspace_dir if key == "workspace.base_dir" else default
-
         mock_workspace_dir.mkdir(exist_ok=True)
+
+        # カレントディレクトリのモックを設定
+        MockOS.getcwd.return_value = str(mock_workspace_dir)
+
         # Create a dummy ahc_config.yaml in the workspace for problem_id determination
         dummy_ws_cfg_path = mock_workspace_dir / "ahc_config.yaml"
         with open(dummy_ws_cfg_path, "w") as f:
             yaml.dump({"contest_id": "submit_contest"}, f)
+
+        # ワークスペース固有の設定をモック
+        mock_ws_config = MockConfig.return_value
+        mock_ws_config.get.side_effect = lambda key, default=None: "submit_contest" if key == "contest_id" else default
+        MockConfig.side_effect = [mock_global_config_instance, mock_ws_config]
 
         mock_kb_instance = MockKnowledgeBase.return_value
         mock_submit_service_instance = MockSubmitService.return_value
@@ -377,12 +393,14 @@ class TestCLI:
         }
 
         with runner.isolated_filesystem(temp_dir=tmp_path):
-            # Invoke with output path relative to 'td'
+            # ワークスペース引数を指定せずにsubmitコマンドを実行(カレントディレクトリを使用)
             result = runner.invoke(cli, ["submit", "test-session", "--output", output_file_name])
 
             assert result.exit_code == 0
-            # Check KB instantiation. Problem_id comes from directory name if contest_id not found.
-            MockKnowledgeBase.assert_called_once_with(str(mock_workspace_dir), problem_id="mock_submit_ws")
+            # カレントディレクトリが取得されたことを確認
+            MockOS.getcwd.assert_called_once()
+            # Check KB instantiation with the correct problem_id from ahc_config.yaml
+            MockKnowledgeBase.assert_called_once_with(str(mock_workspace_dir), problem_id="submit_contest")
             MockSubmitService.assert_called_once_with(mock_global_config_instance, mock_kb_instance)
             # Service receives the path as given to CLI, it might resolve it internally.
             # For the test, we check it was called with the path we provided.

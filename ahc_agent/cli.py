@@ -175,33 +175,54 @@ def solve(ctx, workspace, session_id_option, time_limit, generations, population
 
 @cli.command()
 @click.argument("session_id_arg", metavar="SESSION_ID", required=False)  # Renamed to avoid clash
-@click.option("--watch", "-w", is_flag=True, help="Watch status updates continuously.")
+@click.option(
+    "--workspace",
+    "-w",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    help="Workspace directory path. If not provided, uses current directory.",
+)
+@click.option("--watch", is_flag=True, help="Watch status updates continuously.")
 @click.pass_context
-def status(ctx, session_id_arg, watch):
+def status(ctx, session_id_arg, workspace, watch):
     """
     Show session status. If SESSION_ID is not provided, lists all sessions
-    within the current problem's workspace context.
+    within the specified workspace context.
     """
     global_config = ctx.obj["config"]  # Use the global config for status context
 
-    # Determine workspace_dir for KnowledgeBase. This should be the specific problem's workspace.
-    # The user is expected to be in or target a problem workspace for 'status'.
-    workspace_dir_str = global_config.get("workspace.base_dir")
-    if not workspace_dir_str:
-        click.secho(
-            "Error: 'workspace.base_dir' is not defined in the global configuration. Cannot determine context for status.",
-            fg="red",
-        )
-        ctx.exit(1)
+    # Determine workspace_dir for KnowledgeBase
+    # If workspace is provided, use it
+    # Otherwise, try to use current directory
+    if workspace:
+        workspace_path = Path(workspace).resolve()
+    else:
+        # Use current directory as workspace
+        workspace_path = Path(os.getcwd()).resolve()
+        logger.debug(f"No workspace provided, using current directory: {workspace_path}")
 
-    workspace_path = Path(workspace_dir_str).resolve()
     if not workspace_path.is_dir():
         click.secho(f"Error: Workspace directory '{workspace_path}' does not exist or is not a directory.", fg="red")
         ctx.exit(1)
 
-    # Determine problem_id for KnowledgeBase from the workspace path.
-    # This assumes workspace.base_dir in global config points to a specific problem's directory.
-    problem_id_for_kb = workspace_path.name
+    # Check if the workspace has ahc_config.yaml to determine problem_id
+    problem_specific_config_path = workspace_path / "ahc_config.yaml"
+    problem_id_for_kb = workspace_path.name  # Default/fallback
+
+    if problem_specific_config_path.exists():
+        try:
+            problem_cfg = Config(str(problem_specific_config_path))
+            cfg_contest_id = problem_cfg.get("contest_id")
+            if cfg_contest_id:
+                problem_id_for_kb = cfg_contest_id
+                logger.debug(f"Using contest_id '{problem_id_for_kb}' from ahc_config.yaml")
+            else:
+                logger.warning(f"'contest_id' not found in {problem_specific_config_path}, using directory name '{problem_id_for_kb}' as problem_id.")
+        except Exception as e:
+            logger.warning(
+                f"Could not load {problem_specific_config_path} to determine contest_id, using directory name '{problem_id_for_kb}'. Error: {e}"
+            )
+    else:
+        logger.warning(f"No ahc_config.yaml found in {workspace_path}, using directory name '{problem_id_for_kb}' as problem_id.")
 
     try:
         # KnowledgeBase needs workspace path and problem_id.
@@ -227,44 +248,54 @@ def status(ctx, session_id_arg, watch):
 
 @cli.command()
 @click.argument("session_id_arg", metavar="SESSION_ID")  # Renamed
+@click.option(
+    "--workspace",
+    "-w",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    help="Workspace directory path. If not provided, uses current directory.",
+)
 @click.option("--output", "-o", "output_path_option", type=click.Path(), help="Output file path for the solution code.")
 @click.pass_context
-def submit(ctx, session_id_arg, output_path_option):
+def submit(ctx, session_id_arg, workspace, output_path_option):
     """
     Submit the best solution from a session.
     """
     global_config = ctx.obj["config"]  # Use global config for submit context
 
-    workspace_dir_str = global_config.get("workspace.base_dir")
-    if not workspace_dir_str:
-        click.secho(
-            "Error: 'workspace.base_dir' is not defined in the global configuration. Cannot determine context for submission.",
-            fg="red",
-        )
-        ctx.exit(1)
+    # Determine workspace_dir for KnowledgeBase
+    # If workspace is provided, use it
+    # Otherwise, try to use current directory
+    if workspace:
+        workspace_path = Path(workspace).resolve()
+    else:
+        # Use current directory as workspace
+        workspace_path = Path(os.getcwd()).resolve()
+        logger.debug(f"No workspace provided, using current directory: {workspace_path}")
 
-    workspace_path = Path(workspace_dir_str).resolve()
     if not workspace_path.is_dir():
         click.secho(f"Error: Workspace directory '{workspace_path}' does not exist or is not a directory.", fg="red")
         ctx.exit(1)
 
     # Determine problem_id for KnowledgeBase
-    # This assumes the global workspace.base_dir is the root of a specific contest/problem.
     # If ahc_config.yaml exists in this workspace_path, try to get contest_id from it.
     problem_specific_config_path = workspace_path / "ahc_config.yaml"
     problem_id_for_kb = workspace_path.name  # Default/fallback
+
     if problem_specific_config_path.exists():
         try:
             problem_cfg = Config(str(problem_specific_config_path))
             cfg_contest_id = problem_cfg.get("contest_id")
             if cfg_contest_id:
                 problem_id_for_kb = cfg_contest_id
+                logger.debug(f"Using contest_id '{problem_id_for_kb}' from ahc_config.yaml")
             else:
                 logger.warning(f"'contest_id' not found in {problem_specific_config_path}, using directory name '{problem_id_for_kb}' as problem_id.")
         except Exception as e:
             logger.warning(
                 f"Could not load {problem_specific_config_path} to determine contest_id, using directory name '{problem_id_for_kb}'. Error: {e}"
             )
+    else:
+        logger.warning(f"No ahc_config.yaml found in {workspace_path}, using directory name '{problem_id_for_kb}' as problem_id.")
 
     try:
         knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)

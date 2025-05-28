@@ -93,8 +93,9 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
 - **CLI 操作**: 上記機能を直感的なコマンドラインインターフェースから操作できる。
   - **プロジェクト初期化 (`init {competition_id}`)**: コンテスト ID を指定してプロジェクトを初期化する。ワークスペース作成、問題文・テスト入力例（`tools/in/*.txt` 等）を含む公式ツール群のダウンロード、設定ファイルの生成、（公式ツールに含まれる）テスト入力例の配置などを行う。
   - **問題解決プロセスの実行 (`solve`)**: エージェントがバックグラウンドで解探索を開始。ユーザーは実行中に自然言語で追加の指示やヒントを与えることが可能。
-  - **実行状況の確認 (`status`)**: 現在の進捗、実験結果の成否、使用した LLM トークン数や推定料金などを分かりやすく表示。
+  - **実行状況の確認 (`status`)**: 現在の進捗、実験結果の成否、使用した LLM トークン数や推定料金などを分かりやすく表示。コマンド実行時に `--workspace` で対象を指定するか、カレントディレクトリがワークスペースである必要がある。
   - **プロセスの停止 (`stop`)**: 実行中のエージェントを安全に停止。
+  - **解の提出準備 (`submit`)**: 指定セッションの最良解を取得。コマンド実行時に `--workspace` で対象を指定するか、カレントディレクトリがワークスペースである必要がある。
   - **設定管理 (`config`)**: LLM 関連設定（モデル、API キー等）、進化計算のハイパーパラメータなどを設定・確認。
   - **ライブラリ/DB 操作 (`library`, `database`)**: 典型アルゴリズムライブラリの参照や、過去コンペ解法 DB の検索を行うコマンド。
 - **対話モード**: ユーザーがステップごとに確認・介入しながら問題解決プロセスを進められる。
@@ -190,8 +191,9 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
   - 例: `ahc-agent init ahc030`
   - オプション:
     - `--workspace-root PATH`: ワークスペースのルートディレクトリ (デフォルト: `./workspace`)
-- `ahc-agent solve [OPTIONS]` (カレントディレクトリが初期化済みワークスペースであることを想定)
+- `ahc-agent solve [OPTIONS]` (カレントディレクトリが初期化済みワークスペースであることを想定、または `--workspace` で指定)
   - オプション:
+    - `--workspace PATH`: (任意) ワークスペースディレクトリを指定します。指定がない場合、カレントディレクトリがワークスペースとして扱われます。
     - `--session-name NAME`: セッション名 (デフォルトは日時ベースのユニークな名前)
     - `--time-limit SECONDS`: 解探索の総時間制限 (デフォルト: 1800 秒)
     - `--max-generations NUM`: 進化の最大世代数 (デフォルト: 30)
@@ -200,24 +202,24 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
     - `--problem-file FILE_PATH`: 問題文ファイルのパス (デフォルトはワークスペース内の `problem/problem.md` など)
 - `ahc-agent status [SESSION_NAME_OR_ID] [OPTIONS]`
   - オプション:
+    - `--workspace PATH`: (任意) ワークスペースディレクトリを指定します。指定がない場合、カレントディレクトリがワークスペースとして扱われます。
     - `--watch`: 継続的にステータスを更新表示 (デフォルトは 1 回表示)
     - `--all`: 全セッションのサマリを表示
-- `ahc-agent stop [SESSION_NAME_OR_ID]`
-- `ahc-agent config <KEY> [VALUE]`
-  - 例: `ahc-agent config llm.model o4-minio`
-  - 例: `ahc-agent config evolution.temperature 0.5`
-  - `VALUE`なしで現在の値を表示。ドット記法でネストした値を指定可能。
-- `ahc-agent docker <SUBCOMMAND> [ARGS]` (ワークスペース内での Docker 関連操作)
-  - `build`: ワークスペース内の Dockerfile を使用して開発用 Docker イメージをビルド。
-  - `run`: ビルド済みの Docker コンテナを起動し、インタラクティブシェルに入る。
-  - `cleanup`: このワークスペースに関連する不要なコンテナやイメージを削除。
-- `ahc-agent library <SUBCOMMAND> [ARGS]`
-  - `list`: 利用可能なアルゴリズム/ライブラリの一覧を表示。
-  - `show <NAME>`: 指定したアルゴリズム/ライブラリの詳細（説明、コード例、計算量など）を表示。
-  - `search <KEYWORD>`: キーワードでアルゴリズム/ライブラリを検索。
-- `ahc-agent database <SUBCOMMAND> [ARGS]`
-  - `search --problem "Problem Name Fragment" --tag "tag_name" --algorithm "algo_name"`: 条件に合う過去コンペ情報を検索。
-  - `show <CONTEST_ID>`: 指定したコンペの詳細情報を表示。
+- `ahc-agent stop <SESSION_NAME_OR_ID>`
+- `ahc-agent submit <SESSION_NAME_OR_ID> [OPTIONS]`
+  - オプション:
+    - `--workspace PATH`: (任意) ワークスペースディレクトリを指定します。指定がない場合、カレントディレクトリがワークスペースとして扱われます。
+    - `--output-file FILE_PATH`: 解答コードの出力先ファイルパス (デフォルト: 標準出力)
+- `ahc-agent batch <BATCH_CONFIG_FILE> [OPTIONS]`
+  - オプション:
+    - `--parallel NUM`: 並列実行数
+    - `--output-dir PATH`: 結果の出力ディレクトリ
+- `ahc-agent config <SUBCOMMAND> [ARGS...]`
+  - サブコマンド: `get`, `set`, `export`, `import`
+- `ahc-agent docker <SUBCOMMAND> [ARGS...]`
+  - サブコマンド: `setup`, `status`, `cleanup`
+- `ahc-agent library <SUBCOMMAND> [ARGS...]` (仮)
+- `ahc-agent database <SUBCOMMAND> [ARGS...]` (仮)
 
 ### 6.2. 対話モードの主要なやり取り (`ahc-agent solve --interactive`)
 

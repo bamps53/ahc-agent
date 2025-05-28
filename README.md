@@ -88,8 +88,11 @@ Available commands in interactive mode:
 Display the status of a specific session ID or list all sessions.
 
 ```bash
-ahc-agent status <session_id>
+ahc-agent status <session_id> --workspace path/to/your_workspace_directory
 ```
+
+- `<session_id>`: (Optional) The ID of the session to check. If not provided, lists all sessions.
+- `--workspace PATH` (`-w`): (Optional) Specify the workspace directory. If not provided, the current directory is used as the workspace.
 
 To continuously monitor the status of a specific session:
 
@@ -102,8 +105,12 @@ ahc-agent status <session_id> --watch
 Retrieve the best solution from a specified session ID and output it to standard output or a specified file.
 
 ```bash
-ahc-agent submit <session_id> --output solution.cpp
+ahc-agent submit <session_id> --output solution.cpp --workspace path/to/your_workspace_directory
 ```
+
+- `<session_id>`: The ID of the session from which to retrieve the solution.
+- `--output PATH` (`-o`): (Optional) Specify the file path to output the solution code. If not provided, outputs to standard output.
+- `--workspace PATH` (`-w`): (Optional) Specify the workspace directory. If not provided, the current directory is used as the workspace.
 
 ## ⚙️ Configuration
 
