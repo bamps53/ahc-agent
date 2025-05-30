@@ -1,4 +1,3 @@
-import argparse
 import os
 import re
 import shutil
@@ -231,18 +230,3 @@ def scrape_and_setup_problem(url, base_output_dir="."):
     except Exception as e:
         print(f"An unexpected error occurred during setup: {e}")
     return False
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Scrape task statement and download visualizer from an AtCoder contest page.")
-    parser.add_argument("url", help="The URL of the AtCoder task page")
-    args = parser.parse_args()
-
-    if scrape_and_setup_problem(args.url, "."):
-        print("Problem setup completed successfully.")
-    else:
-        print("Problem setup failed.")
-
-
-if __name__ == "__main__":
-    main()

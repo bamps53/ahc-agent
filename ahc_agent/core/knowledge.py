@@ -1,5 +1,5 @@
 """
-Knowledge base module for AHCAgent CLI.
+Knowledge base module for AHCAgent.
 
 This module provides functionality for storing and retrieving knowledge about solutions.
 """

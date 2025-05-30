@@ -1,5 +1,5 @@
 """
-File I/O utilities for AHCAgent CLI.
+File I/O utilities for AHCAgent.
 
 This module provides utilities for file operations.
 """

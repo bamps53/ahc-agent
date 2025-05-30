@@ -1,5 +1,5 @@
 """
-Implementation debugger module for AHCAgent CLI.
+Implementation debugger module for AHCAgent.
 
 This module provides functionality for debugging and testing C++ implementations.
 """

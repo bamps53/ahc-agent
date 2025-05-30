@@ -1,5 +1,5 @@
 """
-LLM communication utilities for AHCAgent CLI.
+LLM communication utilities for AHCAgent.
 
 This module provides utilities for communicating with LLM APIs using LiteLLM.
 """

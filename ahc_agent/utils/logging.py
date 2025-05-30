@@ -1,5 +1,5 @@
 """
-Logging utilities for AHCAgent CLI.
+Logging utilities for AHCAgent.
 
 This module provides utilities for logging.
 """

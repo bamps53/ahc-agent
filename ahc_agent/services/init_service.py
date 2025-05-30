@@ -6,32 +6,20 @@ from typing import Optional
 
 import yaml
 
-from ahc_agent.config import Config
 from ahc_agent.utils.scraper import scrape_and_setup_problem
 
 logger = logging.getLogger(__name__)
 
 
 class InitService:
-    def __init__(self, config: Config):
-        self.config = config
+    def __init__(self):
+        pass
 
-    def initialize_project(
-        self, contest_id: str, template: Optional[str] = None, docker_image: Optional[str] = None, workspace: Optional[str] = None
-    ) -> dict:
+    def initialize_project(self, contest_id: str, workspace: Optional[str] = None) -> dict:
         """
         Initialize a new AHC project.
         Optionally, provide a CONTEST_ID (e.g., ahc030) to scrape the problem statement.
         """
-        # Override configuration with command-line options if they are provided
-        if template:
-            self.config.set("template", template)
-
-        # If docker_image is provided as an argument, it overrides the config.
-        # If not, the config value (which might be a default) is used.
-        effective_docker_image = docker_image if docker_image else self.config.get("docker.image", "ubuntu:latest")
-        if docker_image:  # ensure the config is updated if a specific image is passed
-            self.config.set("docker.image", docker_image)
 
         # Determine project directory
         project_dir = Path(workspace).resolve() if workspace else Path(os.getcwd()) / contest_id
@@ -52,16 +40,11 @@ class InitService:
             logger.error(err_msg)
             raise RuntimeError(err_msg) from e
 
-        # Determine template to use: argument > config > default
-        effective_template = template if template else self.config.get("template", "default")
-
         project_specific_config_data = {
             "contest_id": contest_id,
-            "template": effective_template,
-            "docker_image": effective_docker_image,  # Use the effective docker image
         }
 
-        project_config_file_path = project_dir / "ahc_config.yaml"
+        project_config_file_path = project_dir / "config.yaml"
         try:
             with open(project_config_file_path, "w") as f:
                 yaml.dump(project_specific_config_data, f, default_flow_style=False)
@@ -82,13 +65,9 @@ class InitService:
         except Exception as e:
             # Non-fatal, project is initialized but scraping failed.
             logger.error(f"Error during scraping: {e}. Project initialized but problem scraping failed.")
-            # Depending on requirements, this could also raise an error or return a specific status.
-            # For now, just logging and continuing.
 
         return {
             "project_dir": str(project_dir),
             "config_file_path": str(project_config_file_path),
             "contest_id": contest_id,
-            "template": effective_template,
-            "docker_image": effective_docker_image,
         }

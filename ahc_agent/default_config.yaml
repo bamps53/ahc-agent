@@ -1,0 +1,33 @@
+llm:
+  provider: litellm
+  model: o4-mini
+  temperature: 1.0
+  max_tokens: 4000
+  timeout: 60
+
+docker:
+  enabled: true
+  image: mcr.microsoft.com/devcontainers/rust:1-1-bullseye
+  cpp_compiler: g++
+  cpp_flags: "-std=c++17 -O2 -Wall"
+
+workspace:
+  base_dir: "./workspace"
+
+evolution:
+  max_generations: 30
+  population_size: 10
+  time_limit_seconds: 1800
+  score_plateau_generations: 5
+
+analyzer:
+  detailed_analysis: true
+
+strategist:
+  detailed_strategy: true
+
+debugger:
+  execution_timeout: 10
+
+problem_logic:
+  test_cases_count: 3

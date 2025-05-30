@@ -1,5 +1,5 @@
 """
-Problem analyzer module for AHCAgent CLI.
+Problem analyzer module for AHCAgent.
 
 This module provides functionality for analyzing AtCoder Heuristic Contest problems.
 """

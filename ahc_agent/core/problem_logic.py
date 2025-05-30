@@ -1,5 +1,5 @@
 """
-Problem logic module for AHCAgent CLI.
+Problem logic module for AHCAgent.
 
 This module provides functionality for handling AtCoder Heuristic Contest problem-specific logic.
 """

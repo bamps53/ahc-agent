@@ -22,7 +22,7 @@ def mock_docker_manager(mocker):
 
 
 @pytest.fixture
-def mock_config(mocker):
+def mock_config(mocker, tmp_path):
     config = mocker.MagicMock(spec=Config)
     config.get.side_effect = lambda key, default=None: {
         "llm": {},
@@ -32,7 +32,7 @@ def mock_config(mocker):
         "evolution": {"time_limit_seconds": 10, "max_generations": 1, "population_size": 2, "score_plateau_generations": 1},
         "debugger": {},
         "problem_logic": {"test_cases_count": 1},  # Default number of test cases if not from tools/in
-        "workspace.base_dir": "./test_ws",  # Used for session_dir in evolve and tools/in path
+        "workspace.base_dir": str(tmp_path / "test_ws"),  # Used for session_dir in evolve and tools/in path
         "contest_id": "test_contest",  # Default contest_id from config
     }.get(key, default)  # Return the default if key is not in the dict
     return config

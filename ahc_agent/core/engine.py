@@ -1,5 +1,5 @@
 """
-Evolutionary engine module for AHCAgent CLI.
+Evolutionary engine module for AHCAgent.
 
 This module provides functionality for evolutionary algorithm-based solution optimization.
 """
