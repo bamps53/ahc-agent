@@ -386,7 +386,7 @@ class TestDockerManager:
             capture_output=True,
             text=True,
             check=False,
-            timeout=docker_manager.build_timeout,  # Use build_timeout here
+            timeout=docker_manager.build_timeout,
         )
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")

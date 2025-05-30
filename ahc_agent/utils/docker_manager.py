@@ -38,12 +38,6 @@ class DockerManager:
         self.timeout = self.config.get("timeout")
         self.cpp_compiler = self.config.get("cpp_compiler")
         self.cpp_flags = self.config.get("cpp_flags")
-        self.rust_compiler = self.config.get("rust_compiler")
-        self.rust_flags = self.config.get("rust_flags")
-        self.java_compiler = self.config.get("java_compiler")
-        self.java_flags = self.config.get("java_flags")
-        self.python_interpreter = self.config.get("python_interpreter")
-        self.python_flags = self.config.get("python_flags")
         self.enabled = self.config.get("enabled")
         self.build_timeout = self.config.get("build_timeout", 300)  # Add build_timeout
 
