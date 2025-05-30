@@ -45,6 +45,10 @@ class KnowledgeBase:
         logger.info("Initialized knowledge base")
         logger.debug(f"Workspace directory: {self.workspace}")
 
+    def get_session_dir(self, session_id: str) -> Path:
+        """Get the directory path for a given session."""
+        return self.sessions_dir / session_id
+
     def create_session(self, problem_id: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Create a new session.
@@ -59,10 +63,10 @@ class KnowledgeBase:
         # Generate session ID
         import uuid
 
-        session_id = str(uuid.uuid4())
+        session_id = str(uuid.uuid4())[:8]
 
         # Create session directory
-        session_dir = os.path.join(self.sessions_dir, session_id)
+        session_dir = self.get_session_dir(session_id)
         ensure_directory(session_dir)
 
         # Create session metadata
@@ -77,7 +81,7 @@ class KnowledgeBase:
             session_metadata.update(metadata)
 
         # Save session metadata
-        metadata_path = os.path.join(session_dir, "metadata.json")
+        metadata_path = session_dir / "metadata.json"
         try:
             write_json(metadata_path, session_metadata)
         except OSError as e:
@@ -98,14 +102,14 @@ class KnowledgeBase:
             Session metadata or None if not found
         """
         # Check if session exists
-        session_dir = os.path.join(self.sessions_dir, session_id)
-        if not os.path.exists(session_dir):
+        session_dir = self.get_session_dir(session_id)
+        if not session_dir.exists():
             logger.warning(f"Session directory {session_dir} not found")
             return None
 
         # Load session metadata
-        metadata_path = os.path.join(session_dir, "metadata.json")
-        if not os.path.exists(metadata_path):
+        metadata_path = session_dir / "metadata.json"
+        if not metadata_path.exists():
             logger.warning(f"Session {session_id} metadata not found")
             return None
 
@@ -136,7 +140,7 @@ class KnowledgeBase:
         metadata["updated_at"] = time.time()
 
         # Save updated metadata
-        metadata_path = os.path.join(self.sessions_dir, session_id, "metadata.json")
+        metadata_path = self.get_session_dir(session_id) / "metadata.json"
         try:
             write_json(metadata_path, metadata)
         except OSError as e:
@@ -158,13 +162,13 @@ class KnowledgeBase:
             True if successful, False otherwise
         """
         # Check if session exists
-        session_dir = os.path.join(self.sessions_dir, session_id)
-        if not os.path.exists(session_dir):
+        session_dir = self.get_session_dir(session_id)
+        if not session_dir.exists():
             logger.warning(f"Session directory {session_dir} not found")
             return False
 
         # Save analysis
-        analysis_path = os.path.join(session_dir, "problem_analysis.json")
+        analysis_path = session_dir / "problem_analysis.json"
         try:
             write_json(analysis_path, analysis)
         except OSError as e:
@@ -178,6 +182,23 @@ class KnowledgeBase:
 
         return True
 
+    def load_problem_analysis(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Load problem analysis for a given session."""
+        session_dir = self.get_session_dir(session_id)
+        analysis_path = session_dir / "problem_analysis.json"
+
+        if not analysis_path.exists():
+            logger.warning(f"Problem analysis {analysis_path} not found for session {session_id}")
+            return None
+
+        try:
+            analysis = read_json(analysis_path)
+            logger.info(f"Loaded problem analysis for session {session_id}")
+            return analysis
+        except OSError as e:
+            logger.error(f"Error loading problem analysis for session {session_id}: {e}")
+            return None
+
     def get_problem_analysis(self, session_id: str) -> Optional[Dict[str, Any]]:
         """
         Get problem analysis.
@@ -188,23 +209,7 @@ class KnowledgeBase:
         Returns:
             Problem analysis or None if not found
         """
-        # Check if session exists
-        session_dir = os.path.join(self.sessions_dir, session_id)
-        if not os.path.exists(session_dir):
-            logger.warning(f"Session directory {session_dir} not found")
-            return None
-
-        # Load analysis
-        analysis_path = os.path.join(session_dir, "problem_analysis.json")
-        if not os.path.exists(analysis_path):
-            logger.warning(f"Problem analysis {analysis_path} not found")
-            return None
-
-        try:
-            return read_json(analysis_path)
-        except (OSError, ValueError) as e:
-            logger.error(f"Error loading problem analysis for session {session_id}: {e}")
-            return None
+        return self.load_problem_analysis(session_id)
 
     def save_solution_strategy(self, session_id: str, strategy: Dict[str, Any]) -> bool:
         """
