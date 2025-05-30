@@ -7,8 +7,8 @@ from ahc_agent.config import Config
 from ahc_agent.core.analyzer import ProblemAnalyzer
 from ahc_agent.core.debugger import ImplementationDebugger
 from ahc_agent.core.engine import EvolutionaryEngine
-from ahc_agent.core.knowledge import KnowledgeBase
 from ahc_agent.core.problem_logic import ProblemLogic
+from ahc_agent.core.session_store import SessionStore
 from ahc_agent.core.strategist import SolutionStrategist
 from ahc_agent.utils.docker_manager import DockerManager
 from ahc_agent.utils.llm import LLMClient
@@ -22,12 +22,12 @@ class SolveService:
         llm_client: LLMClient,
         docker_manager: DockerManager,
         config: Config,
-        knowledge_base: KnowledgeBase,
+        session_store: SessionStore,
     ):
         self.llm_client = llm_client
         self.docker_manager = docker_manager
         self.config = config
-        self.knowledge_base = knowledge_base
+        self.session_store = session_store
         # Initialize core modules that don't depend on session-specific data here
         # Or, if their config is static, they can be initialized here.
         # For now, keeping them initialized within methods if they need specific config sections
@@ -93,11 +93,11 @@ class SolveService:
             contest_id_from_config = Path(base_dir).name
             logger.warning(
                 f"'contest_id' not found in config, using workspace name "
-                f"'{contest_id_from_config}' as problem_id for KnowledgeBase (within SolveService)."
+                f"'{contest_id_from_config}' as problem_id for SessionStore (within SolveService)."
             )
 
         if session_id:
-            session = self.knowledge_base.get_session(session_id)
+            session = self.session_store.get_session(session_id)
             if not session:
                 logger.error(f"Session {session_id} not found")
                 return
@@ -111,7 +111,7 @@ class SolveService:
 
         else:
             parsed_info = await self.problem_logic.parse_problem_statement(problem_text)
-            session_id = self.knowledge_base.create_session(
+            session_id = self.session_store.create_session(
                 parsed_info.get("title", contest_id_from_config or "unknown"),  # Use contest_id as fallback title
                 {"problem_text": problem_text, "parsed_info": parsed_info, "problem_id": contest_id_from_config},
             )
@@ -124,19 +124,19 @@ class SolveService:
             return
 
         logger.info("Analyzing problem...")
-        problem_analysis = self.knowledge_base.get_problem_analysis(session_id)
+        problem_analysis = self.session_store.get_problem_analysis(session_id)
         if not problem_analysis:
             problem_analysis = await self.problem_analyzer.analyze(problem_text)
-            self.knowledge_base.save_problem_analysis(session_id, problem_analysis)
+            self.session_store.save_problem_analysis(session_id, problem_analysis)
 
         logger.info("Developing solution strategy...")
-        solution_strategy = self.knowledge_base.get_solution_strategy(session_id)
+        solution_strategy = self.session_store.get_solution_strategy(session_id)
         if not solution_strategy:
             solution_strategy = await self.solution_strategist.develop_strategy(problem_analysis)
-            self.knowledge_base.save_solution_strategy(session_id, solution_strategy)
+            self.session_store.save_solution_strategy(session_id, solution_strategy)
 
         logger.info("Generating initial solution...")
-        best_solution_from_kb = self.knowledge_base.get_best_solution(session_id)  # Renamed to avoid conflict
+        best_solution_from_kb = self.session_store.get_best_solution(session_id)  # Renamed to avoid conflict
         initial_solution_code = (
             best_solution_from_kb.get("code") if best_solution_from_kb else await self.problem_logic.generate_initial_solution(problem_analysis)
         )
@@ -158,8 +158,8 @@ class SolveService:
         current_score_calculator = await self.problem_logic.create_score_calculator(problem_analysis)  # Renamed
 
         logger.info("Running evolutionary process...")
-        # KnowledgeBaseのセッションディレクトリを使用する
-        session_dir = self.knowledge_base.get_session_dir(session_id)
+        # SessionStoreのセッションディレクトリを使用する
+        session_dir = self.session_store.get_session_dir(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
 
         # Use the wrapper for evaluation
@@ -174,8 +174,8 @@ class SolveService:
             str(session_dir),
         )
 
-        self.knowledge_base.save_evolution_log(session_id, result["evolution_log"])
-        self.knowledge_base.save_solution(
+        self.session_store.save_evolution_log(session_id, result["evolution_log"])
+        self.session_store.save_solution(
             session_id,
             "best",
             {"code": result["best_solution"], "score": result["best_score"], "generation": result["generations_completed"]},
@@ -191,7 +191,7 @@ class SolveService:
         Interactive problem solving.
         Core modules (problem_analyzer, etc.) are taken from self.
         """
-        session = self.knowledge_base.get_session(session_id)
+        session = self.session_store.get_session(session_id)
         if not session:
             logger.error(f"Session {session_id} not found")
             return
@@ -205,7 +205,7 @@ class SolveService:
             if problem_id:
                 # This assumes a way to get problem_text from problem_id, which is not directly available here.
                 # For now, we'll just log an error. A more robust solution might involve
-                # a method in KnowledgeBase or ProblemLogic to fetch problem_text by ID if stored.
+                # a method in SessionStore or ProblemLogic to fetch problem_text by ID if stored.
                 logger.error(f"Problem text could not be loaded for problem_id: {problem_id}")
             return
 
@@ -214,8 +214,8 @@ class SolveService:
         running = True
         current_step = "init"
         # These will store the actual data, not the modules themselves
-        problem_analysis_data = self.knowledge_base.get_problem_analysis(session_id)
-        solution_strategy_data = self.knowledge_base.get_solution_strategy(session_id)
+        problem_analysis_data = self.session_store.get_problem_analysis(session_id)
+        solution_strategy_data = self.session_store.get_solution_strategy(session_id)
         interactive_test_cases = None  # Loaded or generated on demand
         interactive_score_calculator = None  # Created on demand
 
@@ -253,7 +253,7 @@ class SolveService:
                     ss_exists = solution_strategy_data is not None
                     print(f"Solution Strategy: {'Loaded/Complete' if ss_exists else 'Not started/loaded'}")
                     print(f"Interactive Test Cases: {'Generated' if interactive_test_cases else 'Not generated'}")
-                    best_sol = self.knowledge_base.get_best_solution(session_id)
+                    best_sol = self.session_store.get_best_solution(session_id)
                     if best_sol:
                         print(f"Best Score in KB: {best_sol.get('score', 'Unknown')}")
 
@@ -261,7 +261,7 @@ class SolveService:
                     print("\nAnalyzing problem...")
                     if not problem_analysis_data:  # Analyze only if not already loaded
                         problem_analysis_data = await self.problem_analyzer.analyze(problem_text)
-                        self.knowledge_base.save_problem_analysis(session_id, problem_analysis_data)
+                        self.session_store.save_problem_analysis(session_id, problem_analysis_data)
                         print("Problem analysis complete and saved.")
                     else:
                         print("Problem analysis already loaded.")
@@ -270,14 +270,14 @@ class SolveService:
 
                 elif command == "strategy":
                     if not problem_analysis_data:
-                        problem_analysis_data = self.knowledge_base.get_problem_analysis(session_id)  # Ensure it's loaded
+                        problem_analysis_data = self.session_store.get_problem_analysis(session_id)  # Ensure it's loaded
                     if not problem_analysis_data:
                         print("Please analyze the problem first (run 'analyze')")
                         continue
                     print("\nDeveloping solution strategy...")
                     if not solution_strategy_data:  # Develop only if not already loaded
                         solution_strategy_data = await self.solution_strategist.develop_strategy(problem_analysis_data)
-                        self.knowledge_base.save_solution_strategy(session_id, solution_strategy_data)
+                        self.session_store.save_solution_strategy(session_id, solution_strategy_data)
                         print("Solution strategy development complete and saved.")
                     else:
                         print("Solution strategy already loaded.")
@@ -285,7 +285,7 @@ class SolveService:
 
                 elif command == "testcases":
                     if not problem_analysis_data:
-                        problem_analysis_data = self.knowledge_base.get_problem_analysis(session_id)
+                        problem_analysis_data = self.session_store.get_problem_analysis(session_id)
                     if not problem_analysis_data:
                         print("Please analyze the problem first (run 'analyze')")
                         continue
@@ -322,13 +322,13 @@ class SolveService:
 
                 elif command == "initial":
                     if not problem_analysis_data:
-                        problem_analysis_data = self.knowledge_base.get_problem_analysis(session_id)
+                        problem_analysis_data = self.session_store.get_problem_analysis(session_id)
                     if not problem_analysis_data:
                         print("Please analyze the problem first (run 'analyze')")
                         continue
                     print("\nGenerating initial solution...")
                     initial_code = await self.problem_logic.generate_initial_solution(problem_analysis_data)
-                    self.knowledge_base.save_solution(session_id, "initial", {"code": initial_code, "score": 0, "generation": 0})
+                    self.session_store.save_solution(session_id, "initial", {"code": initial_code, "score": 0, "generation": 0})
                     print("Initial solution generated and saved to Knowledge Base.")
                     if input("Show initial solution? [y/N]: ").lower() == "y":
                         print("\n=== Initial Solution ===")
@@ -336,9 +336,9 @@ class SolveService:
 
                 elif command == "evolve":
                     if not problem_analysis_data:
-                        problem_analysis_data = self.knowledge_base.get_problem_analysis(session_id)
+                        problem_analysis_data = self.session_store.get_problem_analysis(session_id)
                     if not solution_strategy_data:
-                        solution_strategy_data = self.knowledge_base.get_solution_strategy(session_id)
+                        solution_strategy_data = self.session_store.get_solution_strategy(session_id)
 
                     if not problem_analysis_data:
                         print("Please analyze the problem first.")
@@ -353,20 +353,20 @@ class SolveService:
                         print("Score calculator not available. Please run 'testcases' first.")
                         continue
 
-                    current_best_sol_kb = self.knowledge_base.get_best_solution(session_id)
+                    current_best_sol_kb = self.session_store.get_best_solution(session_id)
                     initial_code_for_evolution = ""
                     if current_best_sol_kb and current_best_sol_kb.get("code"):
                         initial_code_for_evolution = current_best_sol_kb["code"]
                         print(f"Using best known solution from KB (score: {current_best_sol_kb.get('score', 'N/A')}) as starting point.")
                     else:
-                        initial_sol_from_kb = self.knowledge_base.get_solution(session_id, "initial")
+                        initial_sol_from_kb = self.session_store.get_solution(session_id, "initial")
                         if initial_sol_from_kb and initial_sol_from_kb.get("code"):
                             initial_code_for_evolution = initial_sol_from_kb["code"]
                             print("Using saved initial solution from KB as starting point.")
                         else:
                             print("Generating new initial solution for evolution...")
                             initial_code_for_evolution = await self.problem_logic.generate_initial_solution(problem_analysis_data)
-                            self.knowledge_base.save_solution(session_id, "initial_for_evolve", {"code": initial_code_for_evolution})  # Save it
+                            self.session_store.save_solution(session_id, "initial_for_evolve", {"code": initial_code_for_evolution})  # Save it
                             print("Initial solution generated and saved.")
 
                     # Use self.evolutionary_engine and configure it
@@ -404,8 +404,8 @@ class SolveService:
                         )
 
                     print("\nRunning evolutionary process...")
-                    # KnowledgeBaseのセッションディレクトリを使用する
-                    session_dir_path = self.knowledge_base.get_session_dir(session_id)
+                    # SessionStoreのセッションディレクトリを使用する
+                    session_dir_path = self.session_store.get_session_dir(session_id)
                     session_dir_path.mkdir(parents=True, exist_ok=True)
 
                     evolution_result = await self.evolutionary_engine.evolve(
@@ -415,8 +415,8 @@ class SolveService:
                         eval_func,
                         str(session_dir_path),
                     )
-                    self.knowledge_base.save_evolution_log(session_id, evolution_result["evolution_log"])
-                    self.knowledge_base.save_solution(
+                    self.session_store.save_evolution_log(session_id, evolution_result["evolution_log"])
+                    self.session_store.save_solution(
                         session_id,
                         "best",
                         {

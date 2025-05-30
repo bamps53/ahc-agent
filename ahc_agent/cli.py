@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 
 from .config import Config
-from .core.knowledge import KnowledgeBase
+from .core.session_store import SessionStore
 from .services.init_service import InitService
 from .services.solve_service import SolveService
 from .utils.docker_manager import DockerManager
@@ -114,12 +114,12 @@ def solve(ctx, workspace, session_id_option, interactive):
     problem_id_for_kb = ws_config.get("contest_id")
     if not problem_id_for_kb:
         problem_id_for_kb = workspace_path.name  # Fallback
-        logger.warning(f"'contest_id' not found in {config_file_path}, using workspace name '{problem_id_for_kb}' as problem_id for KnowledgeBase.")
+        logger.warning(f"'contest_id' not found in {config_file_path}, using workspace name '{problem_id_for_kb}' as problem_id for SessionStore.")
         ws_config.set("contest_id", problem_id_for_kb)  # Also update config for service if it relies on it
 
     try:
-        knowledge_base = KnowledgeBase(str(workspace_path), problem_id=problem_id_for_kb)
-        solve_service = SolveService(llm_client, docker_manager, ws_config, knowledge_base)
+        session_store = SessionStore(str(workspace_path), problem_id=problem_id_for_kb)
+        solve_service = SolveService(llm_client, docker_manager, ws_config, session_store)
         asyncio.run(solve_service.run_solve_session(problem_text=problem_text, session_id=session_id_option, interactive=interactive))
     except Exception as e:
         click.secho(f"An error occurred during the solve process: {e}", fg="red")

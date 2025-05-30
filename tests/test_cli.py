@@ -150,9 +150,9 @@ class TestCLI:
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SessionStore")
     @patch("ahc_agent.cli.SolveService")
-    def test_solve_command(self, MockSolveService, MockKnowledgeBase, MockCliConfig, MockLLMClient, MockDockerManager, runner):
+    def test_solve_command(self, MockSolveService, MockSessionStore, MockCliConfig, MockLLMClient, MockDockerManager, runner):
         mock_global_config_instance = MagicMock(spec=Config)
         mock_global_config_instance.get.return_value = {}
 
@@ -170,7 +170,7 @@ class TestCLI:
 
         mock_llm_instance = MockLLMClient.return_value
         mock_docker_instance = MockDockerManager.return_value
-        mock_kb_instance = MockKnowledgeBase.return_value
+        mock_kb_instance = MockSessionStore.return_value
 
         mock_solve_service_instance = MockSolveService.return_value
         mock_solve_service_instance.run_solve_session = AsyncMock(return_value=None)
@@ -190,7 +190,7 @@ class TestCLI:
             MockCliConfig.assert_called_once_with(str(config_file))
             MockLLMClient.assert_called_once_with({})
             MockDockerManager.assert_called_once_with({})
-            MockKnowledgeBase.assert_called_once_with(str(workspace_path), problem_id="test_contest")
+            MockSessionStore.assert_called_once_with(str(workspace_path), problem_id="test_contest")
             MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
             mock_solve_service_instance.run_solve_session.assert_called_once()
             call_args = mock_solve_service_instance.run_solve_session.call_args
@@ -202,10 +202,10 @@ class TestCLI:
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SessionStore")
     @patch("ahc_agent.cli.SolveService")
     def test_solve_command_with_workspace(
-        self, MockSolveService, MockKnowledgeBase, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
+        self, MockSolveService, MockSessionStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
     ):
         contest_id = "ahc999"
         workspace_dir = tmp_path / contest_id
@@ -235,7 +235,7 @@ class TestCLI:
 
         mock_llm_instance = MockLLMClient.return_value
         mock_docker_instance = MockDockerManager.return_value
-        mock_kb_instance = MockKnowledgeBase.return_value
+        mock_kb_instance = MockSessionStore.return_value
 
         mock_solve_service_instance = MockSolveService.return_value
         mock_solve_service_instance.run_solve_session = AsyncMock()
@@ -244,7 +244,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         mock_workspace_config_instance.set.assert_called_with("workspace.base_dir", str(workspace_dir))
-        MockKnowledgeBase.assert_called_once_with(str(workspace_dir), problem_id=contest_id)
+        MockSessionStore.assert_called_once_with(str(workspace_dir), problem_id=contest_id)
         MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
         mock_solve_service_instance.run_solve_session.assert_called_once_with(problem_text=problem_text_content, session_id=None, interactive=False)
         assert f"Solving problem in workspace: {workspace_dir}" in result.output
@@ -252,10 +252,10 @@ class TestCLI:
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.KnowledgeBase")
+    @patch("ahc_agent.cli.SessionStore")
     @patch("ahc_agent.cli.SolveService")
     def test_solve_command_uses_tools_in_files_simplified(
-        self, MockSolveService, MockKnowledgeBase, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
+        self, MockSolveService, MockSessionStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
     ):
         workspace_dir = tmp_path / "ahc_test_workspace_tools"
         workspace_dir.mkdir()

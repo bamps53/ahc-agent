@@ -1,7 +1,7 @@
 """
-Knowledge base module for AHCAgent.
+Session store module for AHCAgent.
 
-This module provides functionality for storing and retrieving knowledge about solutions.
+This module provides functionality for storing and retrieving session information.
 """
 
 import logging
@@ -15,34 +15,28 @@ from ahc_agent.utils.file_io import ensure_directory, read_file, read_json, writ
 logger = logging.getLogger(__name__)
 
 
-class KnowledgeBase:
+class SessionStore:
     """
-    Knowledge base for storing and retrieving solution knowledge.
+    Session store for storing and retrieving session information.
     """
 
-    def __init__(self, workspace: str, problem_id: str, _knowledge_base: Optional[dict] = None):
+    def __init__(self, workspace: str, problem_id: str, _session_store: Optional[dict] = None):
         self.workspace = Path(workspace)
         self.problem_id = problem_id
-        self.knowledge_dir = self.workspace / "knowledge"
-        ensure_directory(self.knowledge_dir)
-
-        # Knowledge base directory
-        self.kb_dir = self.knowledge_dir / "kb"
-        ensure_directory(self.kb_dir)
 
         # Sessions directory
-        self.sessions_dir = self.knowledge_dir / "sessions"
+        self.sessions_dir = self.workspace / "sessions"
         ensure_directory(self.sessions_dir)
 
         # Solutions directory
-        self.solutions_dir = self.knowledge_dir / "solutions"
+        self.solutions_dir = self.workspace / "solutions"
         ensure_directory(self.solutions_dir)
 
         # Experiments directory
-        self.experiments_dir = self.knowledge_dir / "experiments"
+        self.experiments_dir = self.workspace / "experiments"
         ensure_directory(self.experiments_dir)
 
-        logger.info("Initialized knowledge base")
+        logger.info("Initialized session store")
         logger.debug(f"Workspace directory: {self.workspace}")
 
     def get_session_dir(self, session_id: str) -> Path:

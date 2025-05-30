@@ -5,7 +5,7 @@ import pytest
 
 from ahc_agent.config import Config
 from ahc_agent.core.debugger import ImplementationDebugger
-from ahc_agent.core.knowledge import KnowledgeBase
+from ahc_agent.core.session_store import SessionStore
 from ahc_agent.services.solve_service import SolveService
 from ahc_agent.utils.docker_manager import DockerManager
 from ahc_agent.utils.llm import LLMClient
@@ -39,8 +39,8 @@ def mock_config(mocker, tmp_path):
 
 
 @pytest.fixture
-def mock_knowledge_base(mocker):
-    kb = mocker.MagicMock(spec=KnowledgeBase)
+def mock_session_store(mocker):
+    kb = mocker.MagicMock(spec=SessionStore)
     # Default behaviors for a fresh solve
     kb.get_session.return_value = {
         "problem_text": "problem text from session",
@@ -71,7 +71,7 @@ async def test_run_solve_session_fresh_solve_no_session_id(
     mock_llm_client,
     mock_docker_manager,
     mock_config,
-    mock_knowledge_base,
+    mock_session_store,
 ):
     # Arrange: Setup mock instances for core modules
     mock_pa_instance = MockProblemAnalyzer.return_value
@@ -104,12 +104,12 @@ async def test_run_solve_session_fresh_solve_no_session_id(
     )
 
     # SolveService instance
-    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, knowledge_base=mock_knowledge_base)
+    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, session_store=mock_session_store)
 
     problem_text_arg = "This is the problem statement from argument."
 
     # Simulate KB behavior for creating a new session (session_id=None)
-    # get_session will be called by knowledge_base.create_session internally if it's part of its logic,
+    # get_session will be called by session_store.create_session internally if it's part of its logic,
     # but SolveService calls create_session if session_id is None.
     # The important mock here is create_session.
     # The problem_text for analysis should come from the argument.
@@ -120,7 +120,7 @@ async def test_run_solve_session_fresh_solve_no_session_id(
     # Assert
     # Session creation
     mock_pl_instance.parse_problem_statement.assert_called_once_with(problem_text_arg)
-    mock_knowledge_base.create_session.assert_called_once_with(
+    mock_session_store.create_session.assert_called_once_with(
         "Parsed Problem Title",  # from parse_problem_statement result
         {
             "problem_text": problem_text_arg,
@@ -131,10 +131,10 @@ async def test_run_solve_session_fresh_solve_no_session_id(
 
     # Analysis, Strategy, Solution generation
     mock_pa_instance.analyze.assert_called_once_with(problem_text_arg)
-    mock_knowledge_base.save_problem_analysis.assert_called_once_with("test_session_id_created", {"title": "Test Problem Analysis"})
+    mock_session_store.save_problem_analysis.assert_called_once_with("test_session_id_created", {"title": "Test Problem Analysis"})
 
     mock_ss_instance.develop_strategy.assert_called_once_with({"title": "Test Problem Analysis"})
-    mock_knowledge_base.save_solution_strategy.assert_called_once_with("test_session_id_created", {"approach": "Test Strategy"})
+    mock_session_store.save_solution_strategy.assert_called_once_with("test_session_id_created", {"approach": "Test Strategy"})
 
     mock_pl_instance.generate_initial_solution.assert_called_once_with({"title": "Test Problem Analysis"})
     # Note: save_solution for initial solution is not explicitly in SolveService, only for best.
@@ -157,8 +157,8 @@ async def test_run_solve_session_fresh_solve_no_session_id(
     # Check some args of evolve, e.g., initial_solution_code
     assert mock_ee_instance.evolve.call_args[0][2] == "initial_code"  # initial_solution_code
 
-    mock_knowledge_base.save_evolution_log.assert_called_once_with("test_session_id_created", [{"gen": 1, "score": 200}])
-    mock_knowledge_base.save_solution.assert_called_once_with(
+    mock_session_store.save_evolution_log.assert_called_once_with("test_session_id_created", [{"gen": 1, "score": 200}])
+    mock_session_store.save_solution.assert_called_once_with(
         "test_session_id_created", "best", {"code": "best_code_evolved", "score": 200.0, "generation": 1}
     )
 
@@ -178,20 +178,20 @@ async def test_run_solve_session_resuming_solve(
     mock_llm_client,
     mock_docker_manager,
     mock_config,
-    mock_knowledge_base,
+    mock_session_store,
 ):
     # Arrange: KB returns existing data
     existing_analysis = {"title": "Existing Analysis"}
     existing_strategy = {"approach": "Existing Strategy"}
     existing_best_solution = {"code": "existing_best_code", "score": 150.0}
 
-    mock_knowledge_base.get_session.return_value = {
+    mock_session_store.get_session.return_value = {
         "problem_text": "problem from session",
         "metadata": {"problem_text": "problem from session metadata"},
     }
-    mock_knowledge_base.get_problem_analysis.return_value = existing_analysis
-    mock_knowledge_base.get_solution_strategy.return_value = existing_strategy
-    mock_knowledge_base.get_best_solution.return_value = existing_best_solution  # To be used as initial_solution_code
+    mock_session_store.get_problem_analysis.return_value = existing_analysis
+    mock_session_store.get_solution_strategy.return_value = existing_strategy
+    mock_session_store.get_best_solution.return_value = existing_best_solution  # To be used as initial_solution_code
 
     mock_pa_instance = MockProblemAnalyzer.return_value
     mock_ss_instance = MockSolutionStrategist.return_value
@@ -212,7 +212,7 @@ async def test_run_solve_session_resuming_solve(
         }
     )
 
-    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, knowledge_base=mock_knowledge_base)
+    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, session_store=mock_session_store)
 
     problem_text_arg = "problem text for resumed session"  # This might come from KB session if session_id is provided
     session_id_arg = "existing_session_id"
@@ -221,8 +221,8 @@ async def test_run_solve_session_resuming_solve(
     await service.run_solve_session(problem_text_arg, session_id=session_id_arg, interactive=False)
 
     # Assert
-    mock_knowledge_base.get_session.assert_called_once_with(session_id_arg)
-    mock_knowledge_base.create_session.assert_not_called()  # Should not create new session
+    mock_session_store.get_session.assert_called_once_with(session_id_arg)
+    mock_session_store.create_session.assert_not_called()  # Should not create new session
 
     # Analysis and Strategy should NOT be called as data exists
     mock_pa_instance.analyze.assert_not_called()
@@ -240,7 +240,7 @@ async def test_run_solve_session_resuming_solve(
     assert mock_ee_instance.evolve.call_args[0][1] == existing_strategy  # solution_strategy
     assert mock_ee_instance.evolve.call_args[0][2] == "existing_best_code"  # initial_solution_code
 
-    mock_knowledge_base.save_solution.assert_called_once()  # For best solution from evolve
+    mock_session_store.save_solution.assert_called_once()  # For best solution from evolve
 
 
 @patch("ahc_agent.services.solve_service.ProblemLogic")
@@ -266,7 +266,7 @@ async def test_run_solve_session_tools_in_handling(
     mock_llm_client,
     mock_docker_manager,
     mock_config,
-    mock_knowledge_base,
+    mock_session_store,
 ):
     # Arrange
     # Mocks for core modules (similar to fresh_solve, but focus on test case generation)
@@ -291,7 +291,7 @@ async def test_run_solve_session_tools_in_handling(
     mock_test_file_path.name = "0000.txt"
     mock_path_glob.return_value = [mock_test_file_path]
 
-    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, knowledge_base=mock_knowledge_base)
+    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, session_store=mock_session_store)
 
     # Act
     await service.run_solve_session("problem_text_tools", session_id=None, interactive=False)
@@ -321,11 +321,11 @@ async def test_run_solve_session_tools_in_handling(
 
 
 @pytest.mark.asyncio
-async def test_evaluate_solution_wrapper(mock_llm_client, mock_docker_manager, mock_config, mock_knowledge_base):  # Need other mocks for ID
+async def test_evaluate_solution_wrapper(mock_llm_client, mock_docker_manager, mock_config, mock_session_store):  # Need other mocks for ID
     # Arrange
     mock_id_instance = AsyncMock(spec=ImplementationDebugger)  # _evaluate_solution_wrapper uses an ID instance
 
-    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, knowledge_base=mock_knowledge_base)
+    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, session_store=mock_session_store)
 
     # Override the service's debugger instance with our specific mock for this test
     # This is needed because _evaluate_solution_wrapper is called internally by the evolve callback,
@@ -398,7 +398,7 @@ async def test_run_interactive_session_basic_analyze_and_exit(
     mock_llm_client,
     mock_docker_manager,
     mock_config,
-    mock_knowledge_base,
+    mock_session_store,
 ):
     # Arrange
     # Service will use its own instances of core modules based on its __init__
@@ -410,15 +410,15 @@ async def test_run_interactive_session_basic_analyze_and_exit(
     # Configure KB for interactive session
     session_id_interactive = "interactive_session_1"
     # problem_text is fetched from session metadata in interactive mode
-    mock_knowledge_base.get_session.return_value = {
+    mock_session_store.get_session.return_value = {
         "session_id": session_id_interactive,
         "problem_id": "interactive_problem",
         "metadata": {"problem_text": "interactive problem content"},
     }
     # Initial get_problem_analysis returns None, so 'analyze' command will trigger analysis
-    mock_knowledge_base.get_problem_analysis.return_value = None
+    mock_session_store.get_problem_analysis.return_value = None
 
-    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, knowledge_base=mock_knowledge_base)
+    service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, session_store=mock_session_store)
 
     # Simulate user typing "analyze" then "exit"
     mock_input.side_effect = ["analyze", "exit"]
@@ -429,7 +429,7 @@ async def test_run_interactive_session_basic_analyze_and_exit(
     await service.run_interactive_session(session_id_interactive)
 
     # Assert
-    mock_knowledge_base.get_session.assert_called_with(session_id_interactive)
+    mock_session_store.get_session.assert_called_with(session_id_interactive)
 
     # Check that ProblemAnalyzer.analyze was called because user typed "analyze"
     # The instance used is service.problem_analyzer
@@ -438,7 +438,7 @@ async def test_run_interactive_session_basic_analyze_and_exit(
     mock_pa_instance.analyze.assert_called_once_with("interactive problem content")
 
     # Check that the analysis was saved
-    mock_knowledge_base.save_problem_analysis.assert_called_once_with(session_id_interactive, {"title": "Interactive Analysis"})
+    mock_session_store.save_problem_analysis.assert_called_once_with(session_id_interactive, {"title": "Interactive Analysis"})
 
     # Check that input was called twice
     assert mock_input.call_count == 2

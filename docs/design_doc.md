@@ -202,7 +202,7 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
   - **標準出力**: 主要な情報、進捗、ユーザーへのプロンプト (対話モード時)。
   - **標準エラー出力**: エラーメッセージ、警告。
   - **ログファイル**:
-      - セッションログ: `workspace/<CONTEST_ID>/sessions/<SESSION_ID>/logs/session.log` (DEBUG レベル以上の詳細な実行記録、LLM との全プロンプト・レスポンス、各オペレーションの所要時間など) のような構造で保存されます（具体的なパスは `KnowledgeBase` の実装に依存）。
+      - セッションログ: `workspace/<CONTEST_ID>/sessions/<SESSION_ID>/logs/session.log` (DEBUG レベル以上の詳細な実行記録、LLM との全プロンプト・レスポンス、各オペレーションの所要時間など) のような構造で保存されます（具体的なパスは `SessionStore` の実装に依存）。
   - **成果物 (ワークスペース内)**:
       - 問題ファイル: `<WORKSPACE>/problem.md`
       - 公式ツール類: `<WORKSPACE>/tools/` (例: `tester/`, `visualizer/`, `in/`)
