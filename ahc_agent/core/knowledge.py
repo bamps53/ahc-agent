@@ -6,6 +6,7 @@ This module provides functionality for storing and retrieving knowledge about so
 
 import logging
 import os
+from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
@@ -20,25 +21,25 @@ class KnowledgeBase:
     """
 
     def __init__(self, workspace: str, problem_id: str, _knowledge_base: Optional[dict] = None):
-        self.workspace = workspace
+        self.workspace = Path(workspace)
         self.problem_id = problem_id
-        self.knowledge_dir = os.path.join(self.workspace, self.problem_id, "knowledge")
+        self.knowledge_dir = self.workspace / "knowledge"
         ensure_directory(self.knowledge_dir)
 
         # Knowledge base directory
-        self.kb_dir = os.path.join(self.knowledge_dir, "kb")
+        self.kb_dir = self.knowledge_dir / "kb"
         ensure_directory(self.kb_dir)
 
         # Sessions directory
-        self.sessions_dir = os.path.join(self.knowledge_dir, "sessions")
+        self.sessions_dir = self.knowledge_dir / "sessions"
         ensure_directory(self.sessions_dir)
 
         # Solutions directory
-        self.solutions_dir = os.path.join(self.knowledge_dir, "solutions")
+        self.solutions_dir = self.knowledge_dir / "solutions"
         ensure_directory(self.solutions_dir)
 
         # Experiments directory
-        self.experiments_dir = os.path.join(self.knowledge_dir, "experiments")
+        self.experiments_dir = self.knowledge_dir / "experiments"
         ensure_directory(self.experiments_dir)
 
         logger.info("Initialized knowledge base")
