@@ -173,6 +173,7 @@ AHC のようなヒューリスティック型コンテストでは、問題の�
       - 例: `ahc-agent init ahc030`
       - オプション:
           - `--workspace PATH` (`-w`): プロジェクトを作成するディレクトリ。指定がない場合はカレントディレクトリに `<CONTEST_ID>` 名のディレクトリを作成。
+          - `--html FILE_PATH`: 問題文を含むローカルHTMLファイルのパスを指定します。指定された場合、AtCoderのウェブサイトから取得する代わりに、このファイルから問題文を解析します。問題文をローカルに保存している場合や、ウェブアクセスが利用できない/失敗する場合に便利です。
   - `ahc-agent solve <WORKSPACE> [OPTIONS]`
       - 例: `ahc-agent solve ./my_ahc_project`
       - オプション:

@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from typing import Optional
 from urllib.parse import urljoin
 import zipfile
 
@@ -9,62 +10,60 @@ import html2text
 import requests
 
 
-def fetch_problem_statement(url):
+def fetch_problem_statement(url: Optional[str] = None, html_content: Optional[str] = None):  # urlをOptionalに変更し、html_content引数を追加
     """Fetches and parses the problem statement from an AtCoder task URL.
 
     Args:
-        url (str): The URL of the AtCoder task page.
-
-    Returns:
-        tuple: A tuple containing md_content (str), filename_suggestion (str),
-               visualizer_zip_url (str or None), or (None, None, None) if an error occurs.
+        url (str, optional): The URL of the AtCoder task page.
+        html_content (str, optional): The HTML content of the problem statement.
+                                      If provided, `url` is used for context (like visualizer URL) but not fetched.
     """
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching URL {url}: {e}")
-        return None, None, None
+    soup = None
+    if html_content:
+        soup = BeautifulSoup(html_content, "html.parser")
+    elif url:
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, "html.parser")
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching URL {url}: {e}")
+            return None, None
+    else:
+        print("Error: Either url or html_content must be provided.")
+        return None, None
 
-    soup = BeautifulSoup(response.content, "html.parser")
+    if not soup:  # soupがNoneのままの場合 (エラーケース)
+        return None, None
     task_statement_div = soup.find(id="task-statement")
 
     if not task_statement_div:
-        print(f"Task statement section not found on page: {url}")
-        return None, None, None
+        # ローカルHTMLの場合、task-statement divがない可能性も考慮
+        # 代替としてbody全体を使うか、エラーとするか。ここではエラーとする。
+        print("Task statement section (div with id='task-statement') not found.")
+        return None, None
 
-    html_content = str(task_statement_div)
-    md_content = html2text.html2text(html_content)
+    html_for_md = str(task_statement_div)
+    md_content = html2text.html2text(html_for_md)
 
-    filename_suggestion = "problem_statement.md"
-    contest_id_from_url = None
-    try:
-        parts = url.split("/")
-        if len(parts) >= 5 and parts[-2] == "tasks":
-            contest_id_from_url = parts[-3]
-            task_id_full = parts[-1]
-            task_id = task_id_full.split("_")[-1] if "_" in task_id_full else task_id_full
-            filename_suggestion = f"{contest_id_from_url}_{task_id}_problem.md"
-        elif len(parts) >= 4:
-            # Fallback for URLs not strictly matching /contests/.../tasks/...
-            # This might occur for direct task links or other formats.
-            # Try to infer contest_id if possible, otherwise filename_suggestion remains default.
-            if parts[-2] == "contests":  # e.g. /contests/ahc001
-                contest_id_from_url = parts[-1]
-                filename_suggestion = f"{contest_id_from_url}_problem.md"
-            elif len(parts) >= 3 and parts[-3] == "contests":  # e.g. /contests/ahc001/tasks
-                contest_id_from_url = parts[-2]
-                filename_suggestion = f"{contest_id_from_url}_problem.md"
-            # else: filename_suggestion remains default
+    contest_id_from_url = None  # URLがない場合はNoneのまま
 
-    except IndexError:
-        print(f"Warning: Could not determine contest/task ID from URL for filename: {url}.")
-        # Keep default filename_suggestion if pattern doesn't match
+    if url:  # URLがある場合のみビジュアライザURL抽出を試みる
+        try:
+            parts = url.split("/")
+            if len(parts) >= 5 and parts[-2] == "tasks":
+                contest_id_from_url = parts[-3]
+            elif len(parts) >= 4:
+                if parts[-2] == "contests":
+                    contest_id_from_url = parts[-1]
+                elif len(parts) >= 3 and parts[-3] == "contests":
+                    contest_id_from_url = parts[-2]
+        except IndexError:
+            print(f"Warning: Could not determine contest ID from URL for visualizer search: {url}.")
 
     visualizer_zip_url = None
-
-    # 1. Try to find by URL pattern: https://img.atcoder.jp/{contest_id}/*.zip
-    if contest_id_from_url:
+    # URLがあり、かつ contest_id_from_url が特定できた場合のみビジュアライザを探す
+    if url and contest_id_from_url:
         pattern_base_url = f"https://img.atcoder.jp/{contest_id_from_url}/"
         zip_links = soup.find_all("a", href=re.compile(rf"^{re.escape(pattern_base_url)}.*\.zip$"))
 
@@ -72,24 +71,29 @@ def fetch_problem_statement(url):
             if len(zip_links) == 1:
                 visualizer_zip_url = zip_links[0]["href"]
             else:
-                # Prioritize links with keywords if multiple zip files are found
                 keywords = ["ローカル", "local", "ツール", "tool", "visualizer", "ビジュアライザ"]
                 best_link = None
                 for link in zip_links:
                     link_text = link.get_text(separator=" ", strip=True).lower()
-                    # Also check parent or surrounding text for context if link text is generic (e.g. "here")
-                    # This is a simple check, could be made more sophisticated
                     context_text = "".join(link.find_parent().stripped_strings).lower() if link.find_parent() else ""
-
                     if any(keyword in link_text or keyword in context_text for keyword in keywords):
                         best_link = link["href"]
-                        break  # Take the first keyword match
-                if best_link:
-                    visualizer_zip_url = best_link
-                else:
-                    # For now, just take the first one found by the pattern.
-                    visualizer_zip_url = zip_links[0]["href"]
-                    print(f"Multiple .zip links for {contest_id_from_url} found. Selected: {visualizer_zip_url}")
+                        break
+                visualizer_zip_url = best_link if best_link else zip_links[0]["href"]
+
+        # 相対パスのビジュアライザリンクも探す (例: tools.zip, visualizer.zip)
+        # HTMLコンテンツから直接取得する場合、ベースURLが必要になる
+        if not visualizer_zip_url and url:  # urlが存在する場合のみurljoinを試みる
+            relative_zip_links = soup.find_all("a", href=re.compile(r".*\.zip$"))
+            for link in relative_zip_links:
+                href = link["href"]
+                link_text = link.get_text(separator=" ", strip=True).lower()
+                context_text = "".join(link.find_parent().stripped_strings).lower() if link.find_parent() else ""
+                keywords = ["tool", "visualizer", "local", "ツール", "ビジュアライザ", "ローカル"]
+                if any(keyword in link_text or keyword in context_text for keyword in keywords):
+                    # urljoinで絶対URLに変換
+                    visualizer_zip_url = urljoin(url, href)
+                    break
 
     # 2. Fallback to keyword-based search if URL pattern search fails
     if not visualizer_zip_url:
@@ -111,11 +115,15 @@ def fetch_problem_statement(url):
     else:
         print("Could not find visualizer download link.")
 
-    return md_content, filename_suggestion, visualizer_zip_url
+    return md_content, visualizer_zip_url
 
 
 def download_and_extract_visualizer(zip_url, target_tools_dir):
     """Downloads and extracts the visualizer zip file to target_tools_dir."""
+    if not zip_url:  # zip_urlがNoneなら何もしない
+        print("No visualizer URL provided, skipping download.")
+        return False
+    print(f"Attempting to download visualizer from: {zip_url}")
     try:
         print(f"Downloading visualizer from {zip_url}...")
         response = requests.get(zip_url, stream=True, timeout=30)
@@ -191,34 +199,68 @@ def download_and_extract_visualizer(zip_url, target_tools_dir):
     return False
 
 
-def scrape_and_setup_problem(url, base_output_dir="."):
-    """Fetches problem, downloads visualizer, and saves them to structured directories."""
-    md_content, _, visualizer_zip_url = fetch_problem_statement(url)
+def scrape_and_setup_problem(
+    url: Optional[str] = None, base_output_dir=".", html_file_path: Optional[str] = None, contest_id_for_filename: Optional[str] = None
+):
+    """Fetches problem (from URL or local file), downloads visualizer, and saves them to structured directories."""
+    md_content, filename, visualizer_zip_url = None, "problem.md", None
+
+    actual_url_for_visualizer_context = url  # ビジュアライザの相対パス解決用
+
+    if html_file_path:
+        try:
+            with open(html_file_path, encoding="utf-8") as f:
+                html_content = f.read()
+            # ローカルHTMLの場合、URLはオプションだがビジュアライザの相対パス解決のためにあると良い
+            md_content, visualizer_zip_url_from_html = fetch_problem_statement(url=actual_url_for_visualizer_context, html_content=html_content)
+            if visualizer_zip_url_from_html:  # HTML内から見つかったものを優先
+                visualizer_zip_url = visualizer_zip_url_from_html
+            # filename_suggestion は "problem.md" で固定
+
+        except FileNotFoundError:
+            print(f"Error: HTML file not found at {html_file_path}")
+            return False
+        except Exception as e:
+            print(f"Error reading or parsing HTML file {html_file_path}: {e}")
+            return False
+    elif url:
+        md_content, visualizer_zip_url = fetch_problem_statement(url=url)
+    else:
+        print("Error: Either url or html_file_path must be provided to scrape_and_setup_problem.")
+        return False
 
     if md_content is None:
-        return False  # Error in fetching problem statement
+        return False
 
-    # Determine the problem-specific directory based on the URL
-    # For init command, base_output_dir will be the workspace_dir itself.
-    problem_specific_dir = base_output_dir
+    problem_specific_dir = base_output_dir  # initコマンドではbase_output_dirがプロジェクトルートになる想定
 
     try:
         os.makedirs(problem_specific_dir, exist_ok=True)
-        output_path = os.path.join(problem_specific_dir, "problem.md")
+        output_path = os.path.join(problem_specific_dir, filename)  # 提案されたファイル名を使用
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(md_content)
         print(f"Problem statement saved to {output_path}")
 
-        if visualizer_zip_url:
-            target_tools_dir = os.path.join(problem_specific_dir, "tools")
-            if not download_and_extract_visualizer(visualizer_zip_url, target_tools_dir):
-                print("Visualizer download/extraction failed. Continuing without visualizer.")
-        else:
-            # Create tools directory even if visualizer is not present, for consistency
-            target_tools_dir = os.path.join(problem_specific_dir, "tools")
-            os.makedirs(target_tools_dir, exist_ok=True)
+        target_tools_dir = os.path.join(problem_specific_dir, "tools")
+        os.makedirs(target_tools_dir, exist_ok=True)  # toolsディレクトリは常に作成
 
-        # Create tools/in directory for test cases
+        if visualizer_zip_url:
+            resolved_visualizer_zip_url = visualizer_zip_url
+            # URLが相対パスであり、かつ http/https で始まらない場合
+            if not visualizer_zip_url.startswith(("http://", "https://")):
+                if actual_url_for_visualizer_context:  # ベースURLがある場合
+                    resolved_visualizer_zip_url = urljoin(actual_url_for_visualizer_context, visualizer_zip_url)
+                elif contest_id_for_filename:  # ベースURLがなく、コンテストIDがある場合
+                    img_base_url = f"https://img.atcoder.jp/{contest_id_for_filename}/"
+                    resolved_visualizer_zip_url = urljoin(img_base_url, visualizer_zip_url)
+                else:
+                    print(f"Warning: Could not fully resolve relative visualizer URL: {visualizer_zip_url}. No base URL or contest ID provided.")
+
+            if not download_and_extract_visualizer(resolved_visualizer_zip_url, target_tools_dir):
+                print("Visualizer download/extraction failed or skipped. Continuing without visualizer.")
+        else:
+            print("No visualizer URL found or provided. Skipping visualizer download.")
+
         target_tools_in_dir = os.path.join(target_tools_dir, "in")
         os.makedirs(target_tools_in_dir, exist_ok=True)
         print(f"Created directory for test cases: {target_tools_in_dir}")

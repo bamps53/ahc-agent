@@ -41,6 +41,7 @@ ahc-agent init ahc001 --workspace ./my_ahc_project
 - `CONTEST_ID`: (Required) The ID of the AtCoder Heuristic Contest (e.g., `ahc001`).
 - `--workspace PATH` (`-w`): Specify the directory to create the project in.
   If not set, a directory named after the `CONTEST_ID` is created in the current location.
+- `--html FILE_PATH`: Specify the path to a local HTML file containing the problem statement. If provided, the problem statement will be parsed from this file instead of being fetched from the AtCoder website. This is useful when you have the problem statement saved locally or when direct web access is unavailable or fails.
 
 ### 2\. Solve a Problem
 

@@ -37,9 +37,16 @@ def cli(ctx, verbose, quiet):
     default=None,
     help="Directory to create the project in. If not set, creates a directory named CONTEST_ID in the current location.",
 )
+@click.option(
+    "--html",
+    "html_file",
+    type=click.Path(exists=True, dir_okay=False, resolve_path=True),
+    default=None,
+    help="Path to a local HTML file containing the problem statement.",
+)
 @click.argument("contest_id", type=str, required=True)
 @click.pass_context
-def init(ctx, workspace, contest_id):
+def init(ctx, workspace, html_file, contest_id):
     """
     Initialize a new AHC project.
     Scrapes problem statement for CONTEST_ID (e.g., ahc030).
@@ -47,10 +54,11 @@ def init(ctx, workspace, contest_id):
     init_service = InitService()
 
     try:
-        project_info = init_service.initialize_project(
-            contest_id=contest_id,
-            workspace=workspace,
-        )
+        problem_url = None
+        if not html_file and contest_id:
+            problem_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
+
+        project_info = init_service.initialize_project(contest_id=contest_id, workspace=workspace, html_file=html_file, url=problem_url)
         click.echo(f"Project for contest '{project_info['contest_id']}' initialized successfully in '{project_info['project_dir']}'.")
         click.echo(f"Config file created at: {project_info['config_file_path']}")
     except RuntimeError as e:

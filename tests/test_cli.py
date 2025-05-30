@@ -53,7 +53,9 @@ class TestCLI:
         assert result.exit_code == 0
         MockInitService.assert_called_once_with()
 
-        mock_init_service_instance.initialize_project.assert_called_once_with(contest_id="ahc001", workspace="./workspace")
+        mock_init_service_instance.initialize_project.assert_called_once_with(
+            contest_id="ahc001", workspace="./workspace", html_file=None, url="https://atcoder.jp/contests/ahc001/tasks/ahc001_a"
+        )
         assert "Project for contest 'ahc001' initialized successfully" in result.output
         assert "/mocked/workspace/ahc001" in result.output
 
@@ -83,7 +85,9 @@ class TestCLI:
             result = runner.invoke(cli, ["init", contest_id])
 
             assert result.exit_code == 0
-            mock_init_service_instance.initialize_project.assert_called_once_with(contest_id=contest_id, workspace=None)
+            mock_init_service_instance.initialize_project.assert_called_once_with(
+                contest_id=contest_id, workspace=None, html_file=None, url=f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
+            )
             assert f"Project for contest '{contest_id}' initialized successfully" in result.output
             # The output path in the message comes from the mocked return value
             assert str(expected_project_dir) in result.output
@@ -110,7 +114,9 @@ class TestCLI:
             result = runner.invoke(cli, ["init", contest_id, "--workspace", workspace_name])
 
             assert result.exit_code == 0
-            mock_init_service_instance.initialize_project.assert_called_once_with(contest_id=contest_id, workspace=workspace_name)
+            mock_init_service_instance.initialize_project.assert_called_once_with(
+                contest_id=contest_id, workspace=workspace_name, html_file=None, url=f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
+            )
             assert f"Project for contest '{contest_id}' initialized successfully" in result.output
             assert str(expected_project_dir) in result.output
 
