@@ -158,7 +158,8 @@ class SolveService:
         current_score_calculator = await self.problem_logic.create_score_calculator(problem_analysis)  # Renamed
 
         logger.info("Running evolutionary process...")
-        session_dir = Path(self.config.get("workspace.base_dir")) / "sessions" / session_id
+        # KnowledgeBaseのセッションディレクトリを使用する
+        session_dir = self.knowledge_base.get_session_dir(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
 
         # Use the wrapper for evaluation
@@ -403,7 +404,8 @@ class SolveService:
                         )
 
                     print("\nRunning evolutionary process...")
-                    session_dir_path = Path(self.config.get("workspace.base_dir")) / "sessions" / session_id
+                    # KnowledgeBaseのセッションディレクトリを使用する
+                    session_dir_path = self.knowledge_base.get_session_dir(session_id)
                     session_dir_path.mkdir(parents=True, exist_ok=True)
 
                     evolution_result = await self.evolutionary_engine.evolve(

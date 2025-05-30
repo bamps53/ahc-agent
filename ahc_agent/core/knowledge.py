@@ -76,9 +76,10 @@ class KnowledgeBase:
             "created_at": time.time(),
             "updated_at": time.time(),
             "status": "created",
+            "metadata": {},  # 明示的にmetadataフィールドを追加
         }
         if metadata:
-            session_metadata.update(metadata)
+            session_metadata["metadata"] = metadata  # metadataを正しく保存
 
         # Save session metadata
         metadata_path = session_dir / "metadata.json"
