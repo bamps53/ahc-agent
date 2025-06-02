@@ -41,9 +41,6 @@ class DockerManager:
         self.enabled = self.config.get("enabled")
         self.build_timeout = self.config.get("build_timeout", 300)  # Add build_timeout
 
-        self.container_id: Optional[str] = None
-        self.workspace_dir: Optional[str] = None  # Should be set before running commands that need it
-
         if self.enabled:
             self._check_docker()
             self.logger.info(f"Initialized Docker manager with image: {self.image}")

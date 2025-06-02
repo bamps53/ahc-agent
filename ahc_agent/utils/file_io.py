@@ -7,7 +7,7 @@ This module provides utilities for file operations.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import yaml
 
@@ -144,48 +144,4 @@ def write_yaml(file_path: str, data: Dict[str, Any]) -> None:
             yaml.dump(data, f, default_flow_style=False)
     except Exception as e:
         logger.error(f"Error writing to YAML file {file_path}: {e!s}")
-        raise
-
-
-def list_files(directory: str, pattern: Optional[str] = None) -> List[str]:
-    """
-    List files in a directory.
-
-    Args:
-        directory: Directory path
-        pattern: Optional glob pattern
-
-    Returns:
-        List of file paths
-    """
-    try:
-        import glob
-
-        if pattern:
-            return glob.glob(os.path.join(directory, pattern))
-        return [os.path.join(directory, f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
-    except Exception as e:
-        logger.error(f"Error listing files in {directory}: {e!s}")
-        raise
-
-
-def copy_file(source: str, destination: str) -> None:
-    """
-    Copy a file.
-
-    Args:
-        source: Source file path
-        destination: Destination file path
-    """
-    try:
-        import shutil
-
-        # Ensure destination directory exists
-        dest_dir = os.path.dirname(destination)
-        if dest_dir:
-            os.makedirs(dest_dir, exist_ok=True)
-
-        shutil.copy2(source, destination)
-    except Exception as e:
-        logger.error(f"Error copying file from {source} to {destination}: {e!s}")
         raise

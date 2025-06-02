@@ -7,7 +7,6 @@ This module provides functionality for handling AtCoder Heuristic Contest proble
 import json
 import logging
 import random
-import re
 from typing import Any, Callable, Dict, List, Optional
 
 from ahc_agent.utils.llm import LLMClient
@@ -32,128 +31,6 @@ class ProblemLogic:
         self.config = config or {}
 
         logger.info("Initialized problem logic")
-
-    async def parse_problem_statement(self, problem_text: str) -> Dict[str, Any]:
-        """
-        Parse a problem statement to extract key information.
-
-        Args:
-            problem_text: Problem statement text
-
-        Returns:
-            Dictionary with parsed problem information
-        """
-        logger.info("Parsing problem statement")
-
-        # Extract problem components using regex patterns
-        title = self._extract_title(problem_text)
-        time_limit = self._extract_time_limit(problem_text)
-        memory_limit = self._extract_memory_limit(problem_text)
-
-        # Extract input/output format using LLM
-        io_format = await self._extract_io_format(problem_text)
-
-        # Extract constraints using LLM
-        constraints = await self._extract_constraints(problem_text)
-
-        # Extract scoring rules using LLM
-        scoring_rules = await self._extract_scoring_rules(problem_text)
-
-        # Combine results
-        parsed_info = {
-            "title": title,
-            "time_limit": time_limit,
-            "memory_limit": memory_limit,
-            "input_format": io_format.get("input_format", {}),
-            "output_format": io_format.get("output_format", {}),
-            "constraints": constraints,
-            "scoring_rules": scoring_rules,
-            "raw_text": problem_text,
-        }
-
-        logger.info("Problem statement parsing complete")
-        logger.debug(f"Parsed info: {parsed_info}")
-
-        return parsed_info
-
-    def _extract_title(self, problem_text: str) -> str:
-        """
-        Extract problem title from problem text.
-
-        Args:
-            problem_text: Problem statement text
-
-        Returns:
-            Problem title
-        """
-        # Try to find title using regex
-        title_match = re.search(r"^#\s+(.+?)$", problem_text, re.MULTILINE)
-        if title_match:
-            return title_match.group(1).strip()
-
-        # Fallback: use first line
-        lines = problem_text.strip().split("\n")
-        if lines:
-            return lines[0].strip()
-
-        return "Unknown Problem"
-
-    def _extract_time_limit(self, problem_text: str) -> Optional[str]:
-        """
-        Extract time limit from problem text.
-
-        Args:
-            problem_text: Problem statement text
-
-        Returns:
-            Time limit or None if not found
-        """
-        # Try to find time limit using regex
-        time_limit_match = re.search(r"[Tt]ime [Ll]imit:?\s*(\d+(?:\.\d+)?)\s*(?:sec|seconds)", problem_text)
-        if time_limit_match:
-            return time_limit_match.group(1)
-
-        return None
-
-    def _extract_memory_limit(self, problem_text: str) -> Optional[str]:
-        """
-        Extract memory limit from problem text.
-
-        Args:
-            problem_text: Problem statement text
-
-        Returns:
-            Memory limit or None if not found
-        """
-        # Try to find memory limit using regex
-        memory_limit_match = re.search(r"[Mm]emory [Ll]imit:?\s*(\d+)\s*(?:MB)", problem_text)
-        if memory_limit_match:
-            return memory_limit_match.group(1)
-
-        return None
-
-    async def analyze_problem(self, problem_text: str) -> Dict[str, Any]:
-        """
-        Analyze problem text to extract key information using LLM.
-        """
-        prompt = f"""
-            Extract I/O format, constraints, and scoring rules from the problem text.
-            Problem: {problem_text}
-
-            Output JSON format:
-            {{
-              "io_format": {{ "input": "<description>", "output": "<description>" }},
-              "constraints": {{ "<name>": "<description>" }},
-              "scoring": {{ "objective": "<minimize|maximize>", "formula": "<description>" }}
-            }}
-
-            Return only the JSON object.
-            """
-        try:
-            return await self.llm_client.generate_json(prompt)
-        except (json.JSONDecodeError, Exception) as e:
-            logger.error(f"Error analyzing problem: {type(e).__name__} - {e!s}")
-            return {}
 
     async def _extract_io_format(self, problem_text: str) -> Dict[str, Any]:
         """

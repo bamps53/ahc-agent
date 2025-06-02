@@ -15,7 +15,7 @@ graph LR
         CLIMain -- "solve" --> SolveService["🚀 SolveService (solve_service.py)"];
 
         SolveService -- Uses --> CoreLogic;
-        SolveService -- Uses --> KB["📚 Knowledge Base (knowledge.py)"];
+        SolveService -- Uses --> WorkspaceStore["📚 WorkspaceStore (workspace_store.py)"];
         SolveService -- Uses --> LLMUtil["🤖 LLM Client (llm.py)"];
         SolveService -- Uses --> DockerUtil["🐳 Docker Manager (docker_manager.py)"];
 
@@ -32,7 +32,7 @@ graph LR
             Engine --> Strategist;
             Engine --> Debugger;
             Engine --> ProblemHandler;
-            Engine --> KB;
+            Engine --> WorkspaceStore;
 
             Analyzer --> LLMUtil;
             Strategist --> LLMUtil;
@@ -41,7 +41,7 @@ graph LR
             Debugger --> DockerUtil;
         end
 
-        KB -- Stores/Retrieves --> FileSystem["🗂️ Filesystem (Workspace, Logs, Solutions)"];
+        WorkspaceStore -- Stores/Retrieves --> FileSystem["🗂️ Filesystem (Workspace, Logs, Solutions)"];
         LLMUtil -- Interacts --> ExternalLLMAPI["☁️ LLM API"];
         DockerUtil -- Interacts --> LocalDockerDaemon["🐳 Docker Daemon"];
         CoreLogic -- Uses --> FileIOUtil["📄 File I/O (file_io.py)"];
@@ -58,7 +58,7 @@ graph LR
     style Config fill:#eee,stroke:#333,stroke-width:1px
     style CoreLogic fill:#ffc,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
     style Engine fill:#ffd,stroke:#333,stroke-width:2px
-    style KB fill:#dfd,stroke:#333,stroke-width:2px
+    style WorkspaceStore fill:#dfd,stroke:#333,stroke-width:2px
     style LLMUtil fill:#fcc,stroke:#333,stroke-width:2px
     style DockerUtil fill:#cff,stroke:#333,stroke-width:2px
     style ExternalAtCoder fill:#e9e,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
@@ -106,7 +106,7 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
     -   問題分析、戦略立案、解の進化、評価のプロセスを実行します。
     -   オプション:
         -   `WORKSPACE`: (必須) ワークスペースディレクトリのパス。
-        -   `--session-id ID` (`-s`): 既存のセッション ID を指定して処理を再開します。
+
         -   `--interactive` (`-i`): 対話モードで問題解決プロセスを進めます。
 
 

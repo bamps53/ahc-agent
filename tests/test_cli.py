@@ -150,30 +150,30 @@ class TestCLI:
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.SessionStore")
+    @patch("ahc_agent.cli.WorkspaceStore")
     @patch("ahc_agent.cli.SolveService")
-    def test_solve_command(self, MockSolveService, MockSessionStore, MockCliConfig, MockLLMClient, MockDockerManager, runner):
+    def test_solve_command(self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner):
         mock_global_config_instance = MagicMock(spec=Config)
         mock_global_config_instance.get.return_value = {}
 
         mock_workspace_config_instance = MagicMock(spec=Config)
         mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
             "contest_id": "test_contest",
-            "workspace.base_dir": "/mocked_workspace_path",
+            "workspace.base_dir": "/mocked/workspace/path",
             "llm": {},
             "docker": {},
         }.get(key, default)
-        mock_workspace_config_instance.config_file_path = "/mocked_workspace_path/config.yaml"
+        mock_workspace_config_instance.config_file_path = "/mocked/workspace/path/config.yaml"
 
         # solve コマンド内で Config がインスタンス化される際のモックを設定
         MockCliConfig.return_value = mock_workspace_config_instance
 
         mock_llm_instance = MockLLMClient.return_value
         mock_docker_instance = MockDockerManager.return_value
-        mock_kb_instance = MockSessionStore.return_value
+        mock_kb_instance = MockWorkspaceStore.return_value
 
         mock_solve_service_instance = MockSolveService.return_value
-        mock_solve_service_instance.run_solve_session = AsyncMock(return_value=None)
+        mock_solve_service_instance.run_solve = AsyncMock(return_value=None)
 
         with runner.isolated_filesystem() as temp_dir:
             workspace_path = Path(temp_dir)
@@ -190,22 +190,21 @@ class TestCLI:
             MockCliConfig.assert_called_once_with(str(config_file))
             MockLLMClient.assert_called_once_with({})
             MockDockerManager.assert_called_once_with({})
-            MockSessionStore.assert_called_once_with(str(workspace_path), problem_id="test_contest")
+            MockWorkspaceStore.assert_called_once_with(str(workspace_path), problem_id="test_contest")
             MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
-            mock_solve_service_instance.run_solve_session.assert_called_once()
-            call_args = mock_solve_service_instance.run_solve_session.call_args
+            mock_solve_service_instance.run_solve.assert_called_once()
+            call_args = mock_solve_service_instance.run_solve.call_args
             assert call_args[1]["problem_text"] == "# Test Problem"
-            assert call_args[1]["session_id"] is None
             assert call_args[1]["interactive"] is False
             assert f"Solving problem in workspace: {workspace_path}" in result.output
 
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.SessionStore")
+    @patch("ahc_agent.cli.WorkspaceStore")
     @patch("ahc_agent.cli.SolveService")
     def test_solve_command_with_workspace(
-        self, MockSolveService, MockSessionStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
+        self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
     ):
         contest_id = "ahc999"
         workspace_dir = tmp_path / contest_id
@@ -235,27 +234,27 @@ class TestCLI:
 
         mock_llm_instance = MockLLMClient.return_value
         mock_docker_instance = MockDockerManager.return_value
-        mock_kb_instance = MockSessionStore.return_value
+        mock_kb_instance = MockWorkspaceStore.return_value
 
         mock_solve_service_instance = MockSolveService.return_value
-        mock_solve_service_instance.run_solve_session = AsyncMock()
+        mock_solve_service_instance.run_solve = AsyncMock()
 
         result = runner.invoke(cli, ["solve", str(workspace_dir)])
 
         assert result.exit_code == 0
         mock_workspace_config_instance.set.assert_called_with("workspace.base_dir", str(workspace_dir))
-        MockSessionStore.assert_called_once_with(str(workspace_dir), problem_id=contest_id)
+        MockWorkspaceStore.assert_called_once_with(str(workspace_dir), problem_id=contest_id)
         MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
-        mock_solve_service_instance.run_solve_session.assert_called_once_with(problem_text=problem_text_content, session_id=None, interactive=False)
+        mock_solve_service_instance.run_solve.assert_called_once_with(problem_text=problem_text_content, interactive=False)
         assert f"Solving problem in workspace: {workspace_dir}" in result.output
 
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.SessionStore")
+    @patch("ahc_agent.cli.WorkspaceStore")
     @patch("ahc_agent.cli.SolveService")
     def test_solve_command_uses_tools_in_files_simplified(
-        self, MockSolveService, MockSessionStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
+        self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
     ):
         workspace_dir = tmp_path / "ahc_test_workspace_tools"
         workspace_dir.mkdir()
@@ -285,9 +284,9 @@ class TestCLI:
         MockCliConfig.return_value = mock_workspace_config_instance
 
         mock_solve_service_instance = MockSolveService.return_value
-        mock_solve_service_instance.run_solve_session = AsyncMock()
+        mock_solve_service_instance.run_solve = AsyncMock()
 
         result = runner.invoke(cli, ["solve", str(workspace_dir)])
 
         assert result.exit_code == 0
-        mock_solve_service_instance.run_solve_session.assert_called_once()
+        mock_solve_service_instance.run_solve.assert_called_once()

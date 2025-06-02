@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 
 from .config import Config
-from .core.session_store import SessionStore
+from .core.workspace_store import WorkspaceStore
 from .services.init_service import InitService
 from .services.solve_service import SolveService
 from .utils.docker_manager import DockerManager
@@ -72,10 +72,9 @@ def init(ctx, workspace, html_file, contest_id):
 
 @cli.command(context_settings={"help_option_names": ["-h", "--help"]})
 @click.argument("workspace", type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True))
-@click.option("--session-id", "-s", "session_id_option", type=str, help="Session ID for resuming a previous solve session.")
 @click.option("--interactive", "-i", is_flag=True, help="Enable interactive mode for solving.")
 @click.pass_context
-def solve(ctx, workspace, session_id_option, interactive):
+def solve(ctx, workspace, interactive):
     """
     Solve a problem in the specified workspace.
     The workspace must contain 'problem.md' and 'config.yaml'.
@@ -114,13 +113,13 @@ def solve(ctx, workspace, session_id_option, interactive):
     problem_id_for_kb = ws_config.get("contest_id")
     if not problem_id_for_kb:
         problem_id_for_kb = workspace_path.name  # Fallback
-        logger.warning(f"'contest_id' not found in {config_file_path}, using workspace name '{problem_id_for_kb}' as problem_id for SessionStore.")
+        logger.warning(f"'contest_id' not found in {config_file_path}, using workspace name '{problem_id_for_kb}' as problem_id.")
         ws_config.set("contest_id", problem_id_for_kb)  # Also update config for service if it relies on it
 
     try:
-        session_store = SessionStore(str(workspace_path), problem_id=problem_id_for_kb)
-        solve_service = SolveService(llm_client, docker_manager, ws_config, session_store)
-        asyncio.run(solve_service.run_solve_session(problem_text=problem_text, session_id=session_id_option, interactive=interactive))
+        workspace_store = WorkspaceStore(str(workspace_path), problem_id=problem_id_for_kb)
+        solve_service = SolveService(llm_client, docker_manager, ws_config, workspace_store)
+        asyncio.run(solve_service.run_solve(problem_text=problem_text, interactive=interactive))
     except Exception as e:
         click.secho(f"An error occurred during the solve process: {e}", fg="red")
         logger.exception("Unexpected error in solve command.")

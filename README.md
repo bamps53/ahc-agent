@@ -8,7 +8,7 @@ A standalone command-line tool for solving AtCoder Heuristic Contest (AHC) probl
 - Solution search and optimization based on evolutionary algorithms.
 - Docker integration for C++ code compilation and execution.
 - Interactive mode supporting a step-by-step problem-solving process.
-- Knowledge base feature for managing progress and results for each experiment session.
+- Workspace-based storage for managing progress and results for each problem.
 - Flexible configuration management via YAML files.
 
 ## 🛠️ Installation
@@ -55,7 +55,7 @@ ahc-agent solve path/to/your_workspace_directory --interactive
 
 - `WORKSPACE`: Path to the workspace directory.
 - `--interactive` (`-i`): Enable interactive mode for solving.
-- `--session-id` (`-s`): Session ID for resuming a previous solve session.
+
 
 ### 3\. Solve a Problem in Interactive Mode
 

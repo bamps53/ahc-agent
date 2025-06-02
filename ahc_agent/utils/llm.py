@@ -206,34 +206,3 @@ class LLMClient:
         except (TypeError, AttributeError, IndexError, ValueError) as e:
             logger.error(f"Error processing JSON response: {e!s}")
             raise
-
-    async def generate_with_retries(self, prompt: str, max_retries: int = 3, **kwargs) -> str:
-        """
-        Generate text with retries.
-
-        Args:
-            prompt: Prompt text
-            max_retries: Maximum number of retries
-            **kwargs: Additional parameters to pass to the LLM
-
-        Returns:
-            Generated text
-        """
-        retries = 0
-        last_error = None
-
-        while retries < max_retries:
-            try:
-                return await self.generate(prompt, **kwargs)
-
-            except Exception as e:
-                retries += 1
-                last_error = e
-
-                logger.warning(f"Retry {retries}/{max_retries} after error: {e!s}")
-
-                # Exponential backoff
-                await asyncio.sleep(2**retries)
-
-        logger.error(f"Failed after {max_retries} retries: {last_error!s}")
-        raise last_error
