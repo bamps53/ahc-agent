@@ -77,6 +77,7 @@ class SolveService:
     async def run_solve(
         self,
         problem_text: str,
+        interactive: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         contest_id_from_config = self.config.get("contest_id")
@@ -89,6 +90,11 @@ class SolveService:
             )
 
         logger.info(f"Starting solve for problem {contest_id_from_config}")
+
+        # インタラクティブモードが指定されている場合は、run_interactive_solveを呼び出す
+        if interactive:
+            await self.run_interactive_solve()
+            return {"interactive": True}
 
         problem_analysis_data = self.workspace_store.load_problem_analysis()
         if problem_analysis_data:
@@ -128,8 +134,8 @@ class SolveService:
         workspace_dir = self.workspace_store.get_workspace_dir()
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        def eval_func_for_engine(code):
-            return self._evaluate_solution_wrapper(code, current_test_cases, current_score_calculator, self.implementation_debugger)
+        async def eval_func_for_engine(code):
+            return await self._evaluate_solution_wrapper(code, current_test_cases, current_score_calculator, self.implementation_debugger)
 
         result = await self.evolutionary_engine.evolve(
             problem_analysis_data,
@@ -300,8 +306,8 @@ class SolveService:
                     self.evolutionary_engine.population_size = temp_engine_config["population_size"]
                     self.evolutionary_engine.time_limit_seconds = temp_engine_config["time_limit_seconds"]
 
-                    def eval_func(code):
-                        return self._evaluate_solution_wrapper(
+                    async def eval_func(code):
+                        return await self._evaluate_solution_wrapper(
                             code, interactive_test_cases, interactive_score_calculator, self.implementation_debugger
                         )
 

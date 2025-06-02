@@ -309,7 +309,8 @@ class EvolutionaryEngine:
         for solution in self.population:
             if solution["score"] is None:  # Only evaluate if not already evaluated
                 try:
-                    score, details = evaluate_solution(solution["code"])
+                    # 修正: awaitを追加して非同期関数を正しく呼び出す
+                    score, details = await evaluate_solution(solution["code"])
 
                     solution["score"] = score
                     solution["evaluation_details"] = details
