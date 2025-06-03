@@ -13,6 +13,7 @@ from ahc_agent.core.engine import EvolutionaryEngine
 from ahc_agent.core.problem_logic import ProblemLogic
 from ahc_agent.core.strategist import SolutionStrategist
 from ahc_agent.core.workspace_store import WorkspaceStore
+from ahc_agent.services.evaluation_setup_service import EvaluationSetupService
 from ahc_agent.utils.docker_manager import DockerManager
 from ahc_agent.utils.file_io import ensure_directory
 from ahc_agent.utils.llm import LLMClient
@@ -37,6 +38,9 @@ class SolveService:
         self.evolutionary_engine = EvolutionaryEngine(self.llm_client, self.config.get("evolution"))
         self.implementation_debugger = ImplementationDebugger(self.llm_client, self.docker_manager, self.config.get("debugger"))
         self.problem_logic = ProblemLogic(self.llm_client, self.config.get("problem_logic"))
+        self.evaluation_setup_service = EvaluationSetupService(
+            self.config, self.workspace_store, self.problem_logic, self.docker_manager
+        )
 
     async def _evaluate_solution_wrapper(
         self,
@@ -107,6 +111,15 @@ class SolveService:
             problem_analysis_data = await self.problem_analyzer.analyze(problem_text)
             self.workspace_store.save_problem_analysis(problem_analysis_data)
             logger.info("Problem analysis completed")
+
+        # New code to be added
+        if problem_analysis_data: # Ensure it exists before using
+            logger.info("Setting up evaluation environment...")
+            await self.evaluation_setup_service.setup_evaluation_environment(problem_analysis_data)
+            logger.info("Evaluation environment setup completed.")
+        else:
+            logger.error("Problem analysis data is not available, cannot setup evaluation environment.")
+            # Depending on desired behavior, you might want to raise an error or handle this case
 
         solution_strategy = self.workspace_store.load_solution_strategy()
         if not solution_strategy:

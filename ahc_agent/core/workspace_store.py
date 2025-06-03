@@ -37,6 +37,12 @@ class WorkspaceStore:
         """Get the workspace directory path."""
         return self.workspace_path
 
+    def get_evaluation_setup_dir(self) -> Path:
+        """
+        Returns the path to the directory for evaluation setup files.
+        """
+        return self.workspace_path / "evaluation_setup"
+
     def save_problem_text(self, problem_text: str) -> bool:
         """Save problem text."""
         problem_path = self.workspace_path / "problem_text.md"
