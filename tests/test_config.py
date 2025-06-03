@@ -4,7 +4,6 @@ Unit tests for Config class.
 
 import os
 import tempfile
-from unittest.mock import patch
 
 import pytest
 import yaml
@@ -181,7 +180,6 @@ class TestConfig:
             "strategist": {"detailed_strategy": True},
             "debugger": {"execution_timeout": 10},
             "problem_logic": {"test_cases_count": 3},
-            "batch": {"parallel": 1, "output_dir": "~/ahc_batch"},
         }
         assert exported == expected_export
 
@@ -202,18 +200,6 @@ class TestConfig:
         assert config.get("docker.enabled") is True
         assert config.get("docker.image") == "test-image"
         assert config.get("workspace.base_dir") == "/tmp/workspace"
-
-    @patch.dict(os.environ, {"AHC_LLM_MODEL": "gpt-3.5-turbo", "AHC_DOCKER_ENABLED": "false"})
-    def test_env_vars(self):
-        """
-        Test environment variable overrides.
-        """
-        # Initialize config
-        config = Config()
-
-        # Check values from environment variables
-        assert config.get("llm.model") == "gpt-3.5-turbo"
-        assert config.get("docker.enabled") is False
 
     def test_merge_configs(self):
         """

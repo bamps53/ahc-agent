@@ -1,21 +1,26 @@
-# AHCAgent CLI ツール アーキテクチャ設計
+# AHCAgent アーキテクチャ設計
 
-## システムアーキテクチャ
+## 1. システムアーキテクチャ
 
 ```mermaid
 graph LR
     User[👨 User] --> CLIMain["CLI (cli.py)"];
 
     subgraph "AHCAgent System"
+        CLIMain -- "init" --> InitService["🛠️ InitService (init_service.py)"];
         CLIMain -- Manages/Uses --> Config["⚙️ Configuration (config.py)"];
-        CLIMain -- "init" --> ScraperUtil["🕸️ Web Scraper (scraper.py)"];
+        InitService -- Uses --> ScraperUtil["🕸️ Web Scraper (scraper.py)"];
         ScraperUtil --> ExternalAtCoder["🌐 AtCoder Website"];
 
-        CLIMain -- "solve" --> CoreLogic;
-        CLIMain -- "status/submit" --> KB["📚 Knowledge Base (knowledge.py)"];
-        CLIMain -- "docker" --> DockerUtil["🐳 Docker Manager (docker_manager.py)"];
+        CLIMain -- "solve" --> SolveService["🚀 SolveService (solve_service.py)"];
 
-        subgraph "Core Logic"
+        SolveService -- Uses --> CoreLogic;
+        SolveService -- Uses --> WorkspaceStore["📚 WorkspaceStore (workspace_store.py)"];
+        SolveService -- Uses --> LLMUtil["🤖 LLM Client (llm.py)"];
+        SolveService -- Uses --> DockerUtil["🐳 Docker Manager (docker_manager.py)"];
+
+
+        subgraph "Core Logic (used by SolveService)"
             direction LR
             Engine["🧠 Evolutionary Engine (engine.py)"];
             Analyzer["🧩 Problem Analyzer (analyzer.py)"];
@@ -27,28 +32,33 @@ graph LR
             Engine --> Strategist;
             Engine --> Debugger;
             Engine --> ProblemHandler;
-            Engine --> KB;
+            Engine --> WorkspaceStore;
 
-            Analyzer --> LLMUtil["🤖 LLM Client (llm.py)"];
+            Analyzer --> LLMUtil;
             Strategist --> LLMUtil;
             Debugger --> LLMUtil;
             ProblemHandler --> LLMUtil;
             Debugger --> DockerUtil;
         end
 
-        KB -- Stores/Retrieves --> FileSystem["🗂️ Filesystem (Workspace, Logs, Solutions)"];
+        WorkspaceStore -- Stores/Retrieves --> FileSystem["🗂️ Filesystem (Workspace, Logs, Solutions)"];
         LLMUtil -- Interacts --> ExternalLLMAPI["☁️ LLM API"];
         DockerUtil -- Interacts --> LocalDockerDaemon["🐳 Docker Daemon"];
         CoreLogic -- Uses --> FileIOUtil["📄 File I/O (file_io.py)"];
         CoreLogic -- Uses --> LoggingUtil["📜 Logging (logging.py)"];
+        InitService -- Uses --> FileIOUtil;
+        SolveService -- Uses --> FileIOUtil;
+        SolveService -- Uses --> LoggingUtil;
     end
 
     style User fill:#f9f,stroke:#333,stroke-width:2px
     style CLIMain fill:#bbf,stroke:#333,stroke-width:2px
+    style InitService fill:#add,stroke:#333,stroke-width:1.5px
+    style SolveService fill:#dda,stroke:#333,stroke-width:1.5px
     style Config fill:#eee,stroke:#333,stroke-width:1px
     style CoreLogic fill:#ffc,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
     style Engine fill:#ffd,stroke:#333,stroke-width:2px
-    style KB fill:#dfd,stroke:#333,stroke-width:2px
+    style WorkspaceStore fill:#dfd,stroke:#333,stroke-width:2px
     style LLMUtil fill:#fcc,stroke:#333,stroke-width:2px
     style DockerUtil fill:#cff,stroke:#333,stroke-width:2px
     style ExternalAtCoder fill:#e9e,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
@@ -57,45 +67,6 @@ graph LR
     style FileSystem fill:#ddd,stroke:#333,stroke-width:1px
 ```
 
-## 1. パッケージ構造
-
-```
-ahc_agent/
-├── __init__.py            # バージョン情報、パッケージメタデータ
-├── cli.py                 # CLIコマンド定義 (Clickベース)
-├── config.py              # 設定管理 (デフォルト設定、YAML/環境変数からの読み込み)
-├── core/                  # コアロジックモジュール群
-│   ├── __init__.py
-│   ├── analyzer.py        # 問題分析モジュール (LLM使用)
-│   ├── debugger.py        # 実装・デバッグモジュール (Docker経由でのコンパイル・テスト、LLMによるエラー修正)
-│   ├── engine.py          # 進化的探索エンジン (LLMによる解の生成・変異・交叉)
-│   ├── knowledge.py       # 知識ベース・実験ログ管理 (ファイルシステムベース)
-│   ├── problem_logic.py   # AHC問題固有ロジック (LLMによるテストケース生成、スコア計算機生成など)
-│   └── strategist.py      # 解法戦略モジュール (LLM使用)
-└── utils/                 # ユーティリティモジュール群
-    ├── __init__.py
-    ├── docker_manager.py  # Docker操作ユーティリティ
-    ├── file_io.py         # ファイル入出力ユーティリティ
-    ├── llm.py             # LLM (LiteLLM) 通信ユーティリティ
-    └── logging.py         # ログ管理ユーティリティ
-
-tests/                     # テストコード
-├── __init__.py
-├── conftest.py            # Pytestフィクスチャ
-├── test_cli.py            # CLIモジュールのテスト
-├── test_config.py         # 設定管理モジュールのテスト
-├── test_docker_manager.py # Docker管理モジュールのテスト
-├── test_file_io.py        # ファイルIOユーティリティのテスト
-└── test_llm.py            # LLMクライアントのテスト
-
-.gitignore                 # Git無視ファイル
-.pre-commit-config.yaml    # pre-commitフック設定
-architecture.md            # (このファイル) アーキテクチャ設計書
-pyproject.toml             # プロジェクト設定、依存関係
-README.md                  # プロジェクト概要、使い方
-sample_problem.md          # サンプル問題定義
-validate.sh                # 検証用シェルスクリプト
-```
 
 ## 2. CLI コマンド設計
 
@@ -105,11 +76,8 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
 
 ### グローバルオプション
 
-- `--config PATH` (`-c`): 設定ファイルのパスを指定します。
-- `--workspace PATH` (`-w`): 作業ディレクトリのパスを指定します。
-- `--verbose` (`-v`): 詳細なログ（デバッグレベル）を出力します。
-- `--quiet` (`-q`): 最小限のログ（エラーレベルのみ）を出力します。
-- `--no-docker`: Docker を使用せずにローカル環境で実行を試みます（`docker.enabled`設定を`False`に上書き）。
+-   `--verbose` (`-v`): 詳細なログ（デバッグレベル）を出力します。
+-   `--quiet` (`-q`): 最小限のログ（エラーレベルのみ）を出力します。
 
 ### コマンド
 
@@ -119,15 +87,13 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
     ahc-agent init [OPTIONS] CONTEST_ID
     ```
 
-    - 指定された `CONTEST_ID` の新しい AHC プロジェクトを初期化します。
-    - プロジェクトディレクトリ（デフォルトでは `CONTEST_ID` 名、`--workspace` で指定可）と、その中に設定ファイル (`ahc_config.yaml`) を作成します。
-    - 設定ファイルには `contest_id`、`template`（デフォルト "default"）、`docker_image`（グローバル設定またはデフォルト "ubuntu:latest"）が記録されます。
-    - 指定された `CONTEST_ID` の問題文のスクレイピングを試みます。
-    - オプション:
-      - `CONTEST_ID`: (必須) AtCoder Heuristic Contest の ID (例: `ahc001`)。
-      - `--workspace PATH` (`-w`): プロジェクトを作成するディレクトリを指定します。指定がない場合はカレントディレクトリに `CONTEST_ID` 名のディレクトリが作成されます。
-      - `--template NAME` (`-t`): 使用するテンプレートを指定します (現在、具体的なテンプレート機能は限定的)。設定ファイルに記録されます。
-      - `--docker-image IMAGE` (`-i`): プロジェクトの Docker イメージを設定ファイルに記録します。
+    -   指定された `CONTEST_ID` の新しい AHC プロジェクトを初期化します。
+    -   プロジェクトディレクトリ（デフォルトでは `CONTEST_ID` 名、`--workspace` で指定可）と、その中に設定ファイル (`config.yaml`) を作成します。
+    -   設定ファイルには `contest_id` が記録されます。
+    -   指定された `CONTEST_ID` の問題文のスクレイピングを試み、`problem.md` として保存し、公式ツール (tools.zip) があればダウンロード・展開します。
+    -   オプション:
+        -   `CONTEST_ID`: (必須) AtCoder Heuristic Contest の ID (例: `ahc001`)。
+        -   `--workspace PATH` (`-w`): プロジェクトを作成するディレクトリを指定します。指定がない場合はカレントディレクトリに `CONTEST_ID` 名のディレクトリが作成されます。
 
 2.  **`solve`**
 
@@ -135,187 +101,44 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
     ahc-agent solve [OPTIONS] WORKSPACE
     ```
 
-    - 指定されたワークスペースディレクトリ (`WORKSPACE`) 内の問題記述と設定に基づいて問題を解きます。
-    - **ワークスペースディレクトリには `problem.md`（問題記述ファイル）と `ahc_config.yaml`（設定ファイル）が含まれている必要があります。**
-    - 問題分析、戦略立案、解の進化、評価のプロセスを実行します。
-    - オプション:
-      - `WORKSPACE`: (必須) ワークスペースディレクトリのパス。
-      - `--session-id ID` (`-s`): 既存のセッション ID を指定して処理を再開します。
-      - `--time-limit SECONDS` (`-t`): 進化アルゴリズムの時間制限（秒）を設定します。
-      - `--generations NUM` (`-g`): 進化アルゴリズムの最大世代数を設定します。
-      - `--population-size NUM` (`-p`): 進化アルゴリズムの個体群サイズを設定します。
-      - `--interactive` (`-i`): 対話モードで問題解決プロセスを進めます。
+    -   指定されたワークスペースディレクトリ (`WORKSPACE`) 内の問題記述と設定に基づいて問題を解きます。
+    -   **ワークスペースディレクトリには `problem.md`（問題記述ファイル）と `config.yaml`（設定ファイル）が含まれている必要があります。**
+    -   問題分析、戦略立案、解の進化、評価のプロセスを実行します。
+    -   オプション:
+        -   `WORKSPACE`: (必須) ワークスペースディレクトリのパス。
 
-3.  **`status`**
+        -   `--interactive` (`-i`): 対話モードで問題解決プロセスを進めます。
 
-    ```
-    ahc-agent status [OPTIONS] [SESSION_ID]
-    ```
-
-    - 指定されたセッション ID のステータス、または全セッションのリストを表示します。
-    - ワークスペースコンテキストが必要です。`--workspace` オプションで指定するか、カレントディレクトリがワークスペースである必要があります。
-    - `KnowledgeBase` は、指定されたワークスペース内の `ahc_config.yaml` から `contest_id` を読み取り `problem_id` として使用します。存在しない場合はワークスペースのディレクトリ名を `problem_id` とします。
-    - オプション:
-      - `SESSION_ID`: (任意) ステータスを確認するセッションのID。
-      - `--workspace PATH` (`-w`): (任意) ワークスペースディレクトリを指定します。指定がない場合はカレントディレクトリを使用します。
-      - `--watch` (`-w`): 指定されたセッションのステータスを継続的に監視し、更新表示します。
-
-4.  **`stop`**
-
-    ```
-    ahc-agent stop [OPTIONS] SESSION_ID
-    ```
-
-    - 指定されたセッション ID の処理（主に監視モードや将来的な長時間実行プロセス）を停止状態にマークします。
-
-5.  **`submit`**
-
-    ```
-    ahc-agent submit [OPTIONS] SESSION_ID
-    ```
-
-    - 指定されたセッション ID から最良解を取得し、標準出力または指定ファイルに出力します。
-    - ワークスペースコンテキストが必要です。`--workspace` オプションで指定するか、カレントディレクトリがワークスペースである必要があります。
-    - `KnowledgeBase` は、指定されたワークスペース内の `ahc_config.yaml` から `contest_id` を読み取り `problem_id` として使用します。存在しない場合はワークスペースのディレクトリ名を `problem_id` とします。
-    - オプション:
-      - `SESSION_ID`: (必須) 最良解を取得するセッションのID。
-      - `--output PATH` (`-o`): 解のコードを出力するファイルパスを指定します。
-      - `--workspace PATH` (`-w`): (任意) ワークスペースディレクトリを指定します。指定がない場合はカレントディレクトリを使用します。
-
-6.  **`batch`**
-
-    ```
-    ahc-agent batch [OPTIONS] BATCH_CONFIG
-    ```
-
-    - 指定されたバッチ設定ファイル (`BATCH_CONFIG`) に基づいて、複数の実験を連続的または並列的に実行します。
-    - オプション:
-      - `BATCH_CONFIG`: (必須) バッチ設定ファイルのパス。
-      - `--parallel NUM` (`-p`): 並列実行数を指定します。
-      - `--output-dir PATH` (`-o`): バッチ処理結果の出力ディレクトリを指定します。
-
-7.  **`config`** (サブコマンドグループ)
-
-    ```
-    ahc-agent config [OPTIONS] COMMAND [ARGS]...
-    ```
-
-    - 設定の管理を行います。
-    - サブコマンド:
-      - `get KEY`: 指定されたキーの設定値を取得して表示します。
-      - `set KEY VALUE`: 指定されたキーに新しい値を設定します（現在のセッションのみ、永続化はしない想定）。
-      - `export PATH`: 現在の有効な設定（デフォルト、ファイル、環境変数をマージ後）を指定ファイルにエクスポートします。
-      - `import PATH`: 指定ファイルから設定を読み込み、現在の設定にマージします。
-
-8.  **`docker`** (サブコマンドグループ)
-    ```
-    ahc-agent docker [OPTIONS] COMMAND [ARGS]...
-    ```
-    - Docker 環境の管理を行います。
-    - サブコマンド:
-      - `setup`: 設定ファイルで指定された Docker イメージをプルします。
-      - `status`: Docker デーモンの接続状態やテストコマンドの実行により、Docker 環境が利用可能か表示します。
-      - `cleanup`: 不要な Docker リソース（停止したコンテナなど）をクリーンアップします (`docker container prune -f`)。
 
 ## 3. 設定管理
 
-### 設定ファイル形式 (YAML)
+### 設定ファイル
 
-設定は `config.py` 内の `Config` クラスによって管理されます。デフォルト設定、YAML ファイル、環境変数の順でマージされます。
+`<WORKSPACE>/config.yaml`の設定を書き換えてください。
 
-**デフォルト設定の構造 (`ahc_agent/config.py` より):**
+ワークスペース設定ファイル:
+  * 各プロジェクト（ワークスペース）固有の設定ファイルです。
+  * `ahc-agent init` コマンド実行時に、コンテストIDなどの基本的な設定を含む `config.yaml` がワークスペース内に**デフォルト値で作成されます。**
+  * **ユーザーはこのワークスペース内の `config.yaml` を直接編集して、** LLMのモデル、Dockerイメージ、その他のプロジェクト固有のパラメータをカスタマイズできます。
+  * このファイルに記述された設定が最優先されます。
 
-```yaml
-# AHCAgent CLI 設定 (ahc_config.yaml の例)
-
-# LLM設定 (LiteLLM経由)
-llm:
-  provider: "litellm" # LiteLLMがサポートするプロバイダ名 (例: "openai", "anthropic", "google")
-  model: "o4-mini" # 使用するモデル名
-  temperature: 1.0 # 生成時の多様性 (0.0-1.0)
-  max_tokens: 4000 # 最大生成トークン数
-  timeout: 60 # APIリクエストのタイムアウト（秒）
-  # api_key: "YOUR_API_KEY" # APIキー (環境変数での設定を推奨)
-
-# Docker設定
-docker:
-  enabled: true # Dockerを使用するかどうか
-  image: "mcr.microsoft.com/devcontainers/rust:1-1-bullseye" # C++開発ツールも含むRust開発コンテナイメージ
-  mount_path: "/workspace" # コンテナ内のワークスペースマウントパス
-  cpp_compiler: "g++" # C++コンパイラコマンド
-  cpp_flags: "-std=c++17 -O2 -Wall" # C++コンパイルフラグ
-  # timeout: 300 (run_commandのデフォルトタイムアウト、DockerManagerのDEFAULT_CONFIGで定義)
-  # build_timeout: 300 (build_imageのデフォルトタイムアウト、DockerManagerのDEFAULT_CONFIGで定義)
-
-# ワークスペース設定
-workspace:
-  base_dir: "./workspace" # プロジェクトファイルやセッションデータが保存されるベースディレクトリ
-  # keep_history: true (KnowledgeBaseでセッションごとに管理)
-  # max_sessions: 10 (現在、明示的な制限はなし)
-
-# 進化的アルゴリズム設定
-evolution:
-  max_generations: 30 # 最大世代数
-  population_size: 10 # 個体群サイズ
-  time_limit_seconds: 1800 # 進化処理全体の時間制限（秒）
-  score_plateau_generations: 5 # スコア改善が見られない場合に停止するまでの世代数
-
-# 各コアモジュール向け設定 (例)
-analyzer:
-  detailed_analysis: true # 問題分析の詳細度など
-
-strategist:
-  detailed_strategy: true # 戦略立案の詳細度など
-
-debugger:
-  execution_timeout: 10 # C++コードの実行タイムアウト（秒）
-
-problem_logic:
-  test_cases_count: 3 # 自動生成するテストケースのデフォルト数
-
-# バッチ処理設定
-batch:
-  parallel: 1 # デフォルトの並列実行数
-  output_dir: "~/ahc_batch" # バッチ処理結果のデフォルト出力ディレクトリ
-```
-
-### 環境変数
-
-設定は環境変数によっても上書き可能です。環境変数は `AHC_` プレフィックスに続き、セクションとキーをアンダースコアで連結した形式で指定します (例: `AHC_LLM_MODEL="o4-mini"`)。
-
-- `AHC_LLM_PROVIDER`: LLM プロバイダ (例: `openai`)
-- `AHC_LLM_MODEL`: LLM モデル (例: `o4-mini`)
-- `AHC_LLM_TEMPERATURE`: 温度設定 (例: `0.5`)
-- `AHC_DOCKER_ENABLED`: Docker 有効化 (`true`/`false`)
-- `AHC_DOCKER_IMAGE`: Docker イメージ名
-- `AHC_WORKSPACE_BASE_DIR`: ワークスペースのベースディレクトリ
-- LLM の API キーは、`AHC_LLM_API_KEY` または各プロバイダ固有の環境変数 (例: `OPENAI_API_KEY`) を `LLMClient` (`llm.py`) が参照します。
 
 ## 4. Docker 統合
 
-`ahc_agent.utils.docker_manager.DockerManager` クラスが Docker 操作を担当します。
+`ahc_agent.utils.docker_manager.DockerManager` クラスが Docker 操作を担当します。`solve` コマンド実行時、C++コードのコンパイルと実行に利用されます。
 
 ### Docker コンテナ管理
 
-1.  **イメージ取得**:
-    - 設定された Docker イメージ (`docker.image`) を `docker pull` します (`ahc-agent docker setup` コマンド経由など)。
-2.  **コマンド実行**:
-    - `docker run --rm -v <host_work_dir>:<mount_path> -w <mount_path> <image> /bin/bash -c "<command>"` の形式で汎用コマンドを実行します。
-    - ホストの作業ディレクトリがコンテナの `/workspace` (デフォルト) にマウントされます。
-3.  **C++コードのコンパイルと実行**:
-    - `compile_cpp`: 指定された C++ソースファイルをコンテナ内でコンパイルします。コンパイラやフラグは設定に基づきます (`docker.cpp_compiler`, `docker.cpp_flags`)。
-    - `run_cpp` (現在は `run_executable` として `ImplementationDebugger` 内で利用): コンパイルされた実行可能ファイルをコンテナ内で実行し、標準入出力を扱います。実行時間制限も適用されます。
-4.  **ファイルコピー**:
-    - `copy_to_container`: ホストからコンテナへファイルをコピーします。
-    - `copy_from_container`: コンテナからホストへファイルをコピーします。
-5.  **イメージビルド**:
-    - `build_image`: 指定されたコンテキストパスと Dockerfile を使って新しい Docker イメージをビルドします。
-6.  **リソース管理**:
-    - `cleanup`: 不要な Docker リソース（停止したコンテナなど）をクリーンアップします (`docker container prune -f`)。
+1.  **コマンド実行**:
+    -   `docker run --rm -v <host_work_dir>:<mount_path> -w <mount_path> <image> /bin/bash -c "<command>"` の形式で汎用コマンドを実行します。
+    -   ホストの作業ディレクトリがコンテナの `/workspace` (デフォルト) にマウントされます。
+2.  **C++コードのコンパイルと実行**:
+    -   `compile_cpp`: 指定された C++ソースファイルをコンテナ内でコンパイルします。コンパイラやフラグは設定に基づきます (`docker.cpp_compiler`, `docker.cpp_flags`)。
+    -   `run_cpp` (現在は `run_executable` という名前で `ImplementationDebugger` 内で使用): コンパイルされた実行可能ファイルをコンテナ内で実行し、標準入出力を扱います。実行時間制限も適用されます。
 
 ### Dockerfile テンプレートの想定
 
-`DockerManager`自体は特定の Dockerfile テンプレートを持ちませんが、ユーザーがカスタムイメージをビルドする際の Dockerfile の例として以下のようなものが考えられます (C++開発環境を想定):
+ユーザーがカスタムイメージを利用する場合の Dockerfile の例として以下のようなものが考えられます (C++開発環境を想定):
 
 ```dockerfile
 FROM mcr.microsoft.com/devcontainers/rust:1-1-bullseye
@@ -329,161 +152,22 @@ FROM mcr.microsoft.com/devcontainers/rust:1-1-bullseye
 
 # 作業ディレクトリの設定 (DockerManagerのmount_pathと合わせる)
 WORKDIR /workspace
-
-# エントリーポイントやデフォルトコマンドはDockerManager側で指定されるため、ここでは通常不要
 ```
 
 ## 5. 対話モード (`ahc-agent solve --interactive`)
 
-`cli.py` 内の `_interactive_solve` 関数によって対話的な問題解決プロセスが提供されます。
+`SolveService` 内の `run_interactive_session` メソッドによって対話的な問題解決プロセスが提供されます。
 
 ### 対話フローの例
 
 1.  **初期化**: セッション情報、問題の概要表示。
 2.  **コマンド入力**: ユーザーが次の操作を選択。
-    - `analyze`: 問題分析 (`ProblemAnalyzer` を使用)。結果の概要表示。
-    - `strategy`: 解法戦略の立案 (`SolutionStrategist` を使用)。戦略の概要表示。
-    - `testcases`: テストケース生成 (`ProblemLogic` を使用)。スコア計算機も準備。
-    - `initial`: 初期解生成 (`ProblemLogic` を使用)。
-    - `evolve`: 進化的探索の実行 (`EvolutionaryEngine` を使用)。パラメータは対話的に設定可能。
-    - `status`: 現在の各ステップの完了状態や最良スコアなどを表示。
-    - `help`: コマンド一覧を表示。
-    - `exit`: 対話モードを終了。
+    -   `analyze`: 問題分析 (`ProblemAnalyzer` を使用)。結果の概要表示。
+    -   `strategy`: 解法戦略の立案 (`SolutionStrategist` を使用)。戦略の概要表示。
+    -   `testcases`: テストケース生成 (`ProblemLogic` を使用)。スコア計算機も準備。
+    -   `initial`: 初期解生成 (`ProblemLogic` を使用)。
+    -   `evolve`: 進化的探索の実行 (`EvolutionaryEngine` を使用)。パラメータは対話的に設定可能。
+    -   `status`: 現在の各ステップの完了状態や最良スコアなどを表示。
+    -   `help`: コマンド一覧を表示。
+    -   `exit`: 対話モードを終了。
 3.  各コマンド実行後、結果の概要が表示され、再度コマンド入力状態に戻ります。
-
-### インタラクティブコマンド
-
-- `analyze`: 問題分析の実行と結果表示。
-- `strategy`: 解法戦略の立案と結果表示。
-- `testcases`: テストケースの生成とスコア計算機の準備。
-- `initial`: 初期解の生成と保存。
-- `evolve`: 進化プロセスの実行と結果表示。
-- `status`: 現在のセッションの状態（分析、戦略、テストケース、最良スコアなど）を表示。
-- `help`: 利用可能なコマンドを表示。
-- `exit`: 対話モードを終了。
-
-## 6. バッチ処理モード (`ahc-agent batch`)
-
-`cli.py` 内の `batch` コマンドと `_run_batch_experiments` 関数によって、複数の実験設定に基づいたバッチ処理が可能です。
-
-### バッチ設定ファイル形式 (YAML)
-
-```yaml
-# AHCAgent バッチ設定 (例: batch_config.yaml)
-
-# 共通設定 (各実験のデフォルト値として使用可能)
-common:
-  workspace: "~/ahc_batch_results" # バッチ処理全体の出力先 (オプション)
-  time_limit: 1800 # 1実験あたりの時間制限 (秒)
-  max_generations: 30 # 1実験あたりの最大世代数
-  # DockerイメージやLLMモデルなども共通設定可能
-
-# 問題ファイル定義
-problems:
-  - path: "problems/problem1.md" # 問題記述ファイルへのパス
-    name: "problem1" # 問題の識別名
-  - path: "problems/problem2.txt"
-    name: "problem2"
-
-# パラメータセット定義
-parameter_sets:
-  - name: "small_population" # パラメータセットの識別名
-    evolution.population_size: 5 # 上書きする設定 (Configのキー形式)
-    evolution.score_plateau_generations: 3
-  - name: "large_population"
-    evolution.population_size: 20
-    llm.model: "o4-mini"
-
-# 実験設定
-experiments:
-  - problem: "problem1" # 使用する問題名 (problemsで定義)
-    parameter_set: "small_population" # 使用するパラメータセット名 (parameter_setsで定義)
-    repeats: 3 # この実験設定での繰り返し回数
-  - problem: "problem2"
-    parameter_set: "large_population"
-    repeats: 2
-  - problem: "problem1" # パラメータセットを指定しない場合、共通設定やデフォルト設定を使用
-    repeats: 1
-```
-
-### 並列実行
-
-- `ahc-agent batch --parallel NUM` で指定された数に基づき、実験タスクが並列実行されます (`asyncio.gather` を使用)。
-- 各実験は、その実験用の設定（共通設定、問題設定、パラメータセットをマージ）に基づいて独立して実行されます。
-- 結果は実験ごとに指定された出力ディレクトリ (デフォルトは `common.workspace` / `experiment_id`) に保存され、最後に全実験結果のサマリーが JSON 形式で出力されます。
-
-## 7. エラー処理
-
-### エラータイプ (想定されるもの)
-
-1.  **設定エラー**:
-    - 設定ファイルの読み込みエラー (YAML 形式不正など)。
-    - 必須設定値の欠如。
-2.  **Docker 関連エラー**:
-    - Docker デーモン非実行・接続エラー。
-    - 指定イメージの取得失敗。
-    - コンテナ作成・実行エラー (リソース不足、コマンドエラーなど)。
-    - コンパイルエラー、実行タイムアウト。
-3.  **LLM API エラー**:
-    - API キー未設定・不正。
-    - API 接続エラー (ネットワーク問題、レート制限)。
-    - LLM からの無効なレスポンス (期待した形式でない、JSON パースエラーなど)。
-4.  **ファイル I/O エラー**:
-    - 問題ファイルやワークスペースへのアクセス権限不足。
-    - ディスク容量不足。
-5.  **実行時エラー**:
-    - Python コード内のバグ。
-    - 外部プロセス呼び出しの失敗。
-
-### エラーハンドリング戦略
-
-- **明確なエラーメッセージ**: ユーザーに問題の原因と可能な対処法を伝えるログメッセージ。
-- **リトライメカニズム**: LLM API 通信など、一時的なエラーが想定される箇所でのリトライ処理 (`LLMClient`内で実装)。
-- **グレースフルデグラデーション**: Docker が無効な場合でも、限定的な機能（ローカル実行など、ただし現状は Docker 利用が前提の機能が多い）の提供を試みるか、明確にエラーを通知。
-- **状態の保存**: `KnowledgeBase` を通じて、セッションごとの分析結果、戦略、生成された解などをファイルに保存し、エラー発生時や再開時に利用可能にする。
-- **詳細なログ記録**: `logging` モジュールを使用して、エラー発生時のコンテキスト情報（スタックトレース、関連データなど）を記録。デバッグレベルのログも活用。
-
-## 8. ログ管理
-
-`ahc_agent.utils.logging` モジュールで設定。
-
-### ログレベル
-
-`click` の `--verbose` / `--quiet` オプション、または設定ファイルや環境変数で制御可能。
-
-- `ERROR`: エラー発生時のみ。
-- `WARNING`: 警告およびエラー。
-- `INFO`: 通常の動作情報（デフォルト）。
-- `DEBUG`: 詳細なデバッグ情報。
-- `TRACE`: (現在、明示的な TRACE レベルはなし。DEBUG が最も詳細)
-
-### ログ出力先
-
-- **コンソール**: 標準出力/標準エラー出力。
-- **ファイル**: (オプション) 設定でログファイルパスを指定可能。
-- **JSON フォーマット**: (オプション) 設定で JSON 形式のログ出力を有効化可能。
-
----
-
-## 9. テスト戦略
-
-`tests/` ディレクトリにテストコードを配置。`pytest` を使用。
-
-### 単体テスト
-
-- 各コアモジュール (`analyzer`, `config`, `docker_manager`, `file_io`, `llm` など) の独立した機能テスト。
-- モック (`unittest.mock`) を使用して、LLM API 呼び出しや Docker プロセス実行などの外部依存を分離。
-- 設定値の境界値テスト、エラーケースのテスト。
-
-### 統合テスト (部分的なもの)
-
-- CLI コマンドの呼び出しと基本的な動作確認 (`test_cli.py`)。
-- 複数のモジュールが連携するシナリオのテスト（例: `solve` コマンド実行時の主要フローの一部を模倣）。
-
-### `validate.sh` によるエンドツーエンドに近いテスト
-
-- `validate.sh` スクリプトは、`ahc-agent init`, `docker status`, `solve` (サンプル問題使用), `status`, `submit` といった一連のコマンドを実行し、ツール全体の基本的な動作を検証します。これは手動実行を想定した簡易的な E2E テストとして機能します。
-
-### パフォーマンステスト
-
-- 現状、自動化されたパフォーマンステストの具体的な仕組みはリポジトリからは明確ではないが、`EvolutionaryEngine` の時間制限機能や、バッチ処理モードでの実行時間計測などが手動での性能評価に利用可能。

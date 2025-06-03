@@ -30,6 +30,7 @@ dependencies = [
     "colorama>=0.4.4",
     "bs4>=0.0.2",
     "html2text>=2024.2.26",
+    "questionary>=2.1.0",
 ]
 
 [dependency-groups]

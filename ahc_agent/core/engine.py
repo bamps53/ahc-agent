@@ -1,5 +1,5 @@
 """
-Evolutionary engine module for AHCAgent CLI.
+Evolutionary engine module for AHCAgent.
 
 This module provides functionality for evolutionary algorithm-based solution optimization.
 """
@@ -195,55 +195,6 @@ class EvolutionaryEngine:
             logger.error(f"Error in evolutionary process: {e!s}")
             raise
 
-    async def _initialize_population(
-        self,
-        problem_analysis: Dict[str, Any],
-        solution_strategy: Dict[str, Any],
-        initial_solution: Optional[str] = None,
-        workspace_dir: Optional[str] = None,
-    ) -> None:
-        """
-        Initialize the population.
-
-        Args:
-            problem_analysis: Problem analysis from ProblemAnalyzer
-            solution_strategy: Solution strategy from SolutionStrategist
-            initial_solution: Initial solution code (optional)
-            workspace_dir: Directory for storing solutions
-        """
-        logger.info(f"Initializing population with size {self.population_size}")
-
-        self.population = []
-        if initial_solution:
-            self.population.append(
-                {
-                    "code": initial_solution,
-                    "score": None,
-                    "evaluation_details": None,
-                    "generation": 0,
-                    "parent_ids": [],
-                    "id": 0,
-                }
-            )
-
-        # Generate remaining solutions
-        num_solutions_to_generate = self.population_size - len(self.population)
-        if num_solutions_to_generate > 0:
-            generated_solutions = await asyncio.gather(
-                *[
-                    self._generate_initial_solution(
-                        problem_analysis,
-                        solution_strategy,
-                        i + len(self.population),
-                        workspace_dir,
-                    )
-                    for i in range(num_solutions_to_generate)
-                ]
-            )
-            self.population.extend([sol for sol in generated_solutions if sol])
-
-        logger.info(f"Population initialized with {len(self.population)} solutions")
-
     async def _generate_initial_solution(
         self,
         problem_analysis: Dict[str, Any],
@@ -358,7 +309,8 @@ class EvolutionaryEngine:
         for solution in self.population:
             if solution["score"] is None:  # Only evaluate if not already evaluated
                 try:
-                    score, details = evaluate_solution(solution["code"])
+                    # 修正: awaitを追加して非同期関数を正しく呼び出す
+                    score, details = await evaluate_solution(solution["code"])
 
                     solution["score"] = score
                     solution["evaluation_details"] = details

@@ -1,5 +1,5 @@
 """
-Solution strategist module for AHCAgent CLI.
+Solution strategist module for AHCAgent.
 
 This module provides functionality for developing solution strategies for AtCoder Heuristic Contest problems.
 """

@@ -1,7 +1,3 @@
-"""
-Default configuration for AHCAgent CLI.
-"""
-
 import os
 from typing import Any, Dict, Optional, Union
 
@@ -10,7 +6,7 @@ import yaml
 
 class Config:
     """
-    Configuration manager for AHCAgent CLI.
+    Configuration manager for AHCAgent.
     """
 
     def __init__(self, config_path_or_dict: Optional[Union[str, Dict[str, Any]]] = None):
@@ -21,47 +17,35 @@ class Config:
             config_path_or_dict: Path to configuration file or configuration dictionary
         """
         self.config_file_path: Optional[str] = None
-        # Default configuration
-        self.config = {
-            "llm": {"provider": "litellm", "model": "o4-mini", "temperature": 1.0, "max_tokens": 4000, "timeout": 60},
-            "docker": {
-                "enabled": True,
-                "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
-                "cpp_compiler": "g++",
-                "cpp_flags": "-std=c++17 -O2 -Wall",
-            },
-            "workspace": {"base_dir": "./workspace"},
-            "evolution": {
-                "max_generations": 30,
-                "population_size": 10,
-                "time_limit_seconds": 1800,
-                "score_plateau_generations": 5,
-            },
-            "analyzer": {"detailed_analysis": True},
-            "strategist": {"detailed_strategy": True},
-            "debugger": {"execution_timeout": 10},
-            "problem_logic": {"test_cases_count": 3},
-            "batch": {"parallel": 1, "output_dir": "~/ahc_batch"},
-        }
+        self.config: Dict[str, Any] = {}
 
-        # Load configuration from file or dictionary
-        if config_path_or_dict:
-            if isinstance(config_path_or_dict, str):
-                # Load from file
-                self.config_file_path = config_path_or_dict
-                try:
-                    with open(config_path_or_dict) as f:
-                        loaded_config = yaml.safe_load(f)
-                        if loaded_config:
-                            self._merge_configs(self.config, loaded_config)
-                except (OSError, yaml.YAMLError) as e:
-                    print(f"Error loading configuration from {config_path_or_dict}: {e!s}")
-            elif isinstance(config_path_or_dict, dict):
-                # Load from dictionary
-                self._merge_configs(self.config, config_path_or_dict)
+        # Determine the path to the default configuration file
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        default_config_path = os.path.join(base_dir, "default_config.yaml")
 
-        # Override with environment variables
-        self._load_from_env()
+        # Load default configuration
+        if os.path.exists(default_config_path):
+            with open(default_config_path) as f:
+                self.config = yaml.safe_load(f)
+        else:
+            # This case should ideally not happen if default_config.yaml is part of the package
+            print(f"Warning: Default config file {default_config_path} not found. Initializing with empty config.")
+            self.config = {}
+
+        # Load user-provided configuration from file or dictionary
+        if isinstance(config_path_or_dict, str):
+            self.config_file_path = config_path_or_dict
+            if os.path.exists(self.config_file_path):
+                with open(self.config_file_path) as f:
+                    user_config = yaml.safe_load(f)
+                self._merge_configs(self.config, user_config)
+            else:
+                print(f"Warning: Config file {self.config_file_path} not found. Using default settings.")
+        elif isinstance(config_path_or_dict, dict):
+            self._merge_configs(self.config, config_path_or_dict)
+        elif config_path_or_dict is None:
+            # If no config is provided, defaults from default_config.yaml are already loaded.
+            pass
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -152,31 +136,3 @@ class Config:
                 self._merge_configs(base[key], value)
             else:
                 base[key] = value
-
-    def _load_from_env(self) -> None:
-        """
-        Load configuration from environment variables.
-
-        Environment variables should be in the format AHC_SECTION_KEY.
-        For example, AHC_LLM_MODEL will override llm.model.
-        """
-        for env_key, env_value in os.environ.items():
-            if env_key.startswith("AHC_"):
-                # Convert environment variable name to config key
-                # AHC_LLM_MODEL -> llm.model
-                config_key = env_key[4:].lower().replace("_", ".")
-
-                # Convert value to appropriate type
-                if env_value.lower() == "true":
-                    value = True
-                elif env_value.lower() == "false":
-                    value = False
-                elif env_value.isdigit():
-                    value = int(env_value)
-                elif env_value.replace(".", "", 1).isdigit() and env_value.count(".") == 1:
-                    value = float(env_value)
-                else:
-                    value = env_value
-
-                # Set config value
-                self.set(config_key, value)

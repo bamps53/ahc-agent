@@ -6,35 +6,26 @@ from typing import Optional
 
 import yaml
 
-from ahc_agent.config import Config
 from ahc_agent.utils.scraper import scrape_and_setup_problem
 
 logger = logging.getLogger(__name__)
 
 
 class InitService:
-    def __init__(self, config: Config):
-        self.config = config
+    def __init__(self):
+        pass
 
     def initialize_project(
-        self, contest_id: str, template: Optional[str] = None, docker_image: Optional[str] = None, workspace: Optional[str] = None
+        self, contest_id: str, workspace: Optional[str] = None, html_file: Optional[str] = None, url: Optional[str] = None
     ) -> dict:
         """
         Initialize a new AHC project.
         Optionally, provide a CONTEST_ID (e.g., ahc030) to scrape the problem statement.
         """
-        # Override configuration with command-line options if they are provided
-        if template:
-            self.config.set("template", template)
-
-        # If docker_image is provided as an argument, it overrides the config.
-        # If not, the config value (which might be a default) is used.
-        effective_docker_image = docker_image if docker_image else self.config.get("docker.image", "ubuntu:latest")
-        if docker_image:  # ensure the config is updated if a specific image is passed
-            self.config.set("docker.image", docker_image)
 
         # Determine project directory
-        project_dir = Path(workspace).resolve() if workspace else Path(os.getcwd()) / contest_id
+        base_path = Path(workspace).resolve() if workspace else Path(os.getcwd())
+        project_dir = base_path / contest_id
 
         try:
             project_dir.mkdir(parents=True, exist_ok=False)
@@ -52,16 +43,11 @@ class InitService:
             logger.error(err_msg)
             raise RuntimeError(err_msg) from e
 
-        # Determine template to use: argument > config > default
-        effective_template = template if template else self.config.get("template", "default")
-
         project_specific_config_data = {
             "contest_id": contest_id,
-            "template": effective_template,
-            "docker_image": effective_docker_image,  # Use the effective docker image
         }
 
-        project_config_file_path = project_dir / "ahc_config.yaml"
+        project_config_file_path = project_dir / "config.yaml"
         try:
             with open(project_config_file_path, "w") as f:
                 yaml.dump(project_specific_config_data, f, default_flow_style=False)
@@ -73,22 +59,31 @@ class InitService:
             raise RuntimeError(err_msg) from e
 
         # Scrape problem statement
-        # It's important that contest_id is required for this service method.
-        problem_url = f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
-        logger.info(f"Attempting to scrape problem from {problem_url}...")
-        try:
-            scrape_and_setup_problem(problem_url, str(project_dir))
-            logger.info(f"Problem scraped and set up successfully in '{project_dir}'.")
-        except Exception as e:
-            # Non-fatal, project is initialized but scraping failed.
-            logger.error(f"Error during scraping: {e}. Project initialized but problem scraping failed.")
-            # Depending on requirements, this could also raise an error or return a specific status.
-            # For now, just logging and continuing.
+        if html_file:
+            logger.info(f"Attempting to scrape problem from local HTML file: {html_file} for contest {contest_id}...")
+            try:
+                scrape_and_setup_problem(
+                    url=url,
+                    base_output_dir=str(project_dir),
+                    html_file_path=html_file,
+                    contest_id_for_filename=contest_id,
+                )
+                logger.info(f"Problem scraped and set up successfully from '{html_file}' in '{project_dir}'.")
+            except Exception as e:
+                logger.error(f"Error during scraping from HTML file '{html_file}': {e}. Project initialized but problem scraping failed.")
+        else:
+            # It's important that contest_id is required for this service method.
+            problem_url = url if url else f"https://atcoder.jp/contests/{contest_id}/tasks/{contest_id}_a"
+            logger.info(f"Attempting to scrape problem from {problem_url}...")
+            try:
+                scrape_and_setup_problem(url=problem_url, base_output_dir=str(project_dir), contest_id_for_filename=contest_id)
+                logger.info(f"Problem scraped and set up successfully in '{project_dir}'.")
+            except Exception as e:
+                # Non-fatal, project is initialized but scraping failed.
+                logger.error(f"Error during scraping from URL: {e}. Project initialized but problem scraping failed.")
 
         return {
             "project_dir": str(project_dir),
             "config_file_path": str(project_config_file_path),
             "contest_id": contest_id,
-            "template": effective_template,
-            "docker_image": effective_docker_image,
         }

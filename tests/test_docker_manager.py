@@ -105,12 +105,6 @@ class TestDockerManager:
         assert docker_manager.timeout == 300
         assert docker_manager.cpp_compiler == "g++"  # Assert instance attribute
         assert docker_manager.cpp_flags == "-std=c++17 -O2 -Wall"  # Assert instance attribute
-        assert docker_manager.rust_compiler == "rustc"  # Assert instance attribute
-        assert docker_manager.rust_flags == "-C opt-level=3"  # Assert instance attribute
-        assert docker_manager.java_compiler == "javac"  # Assert instance attribute
-        assert docker_manager.java_flags == ""  # Assert instance attribute
-        assert docker_manager.python_interpreter == "python3"  # Assert instance attribute
-        assert docker_manager.python_flags == ""  # Assert instance attribute
 
     @patch("ahc_agent.utils.docker_manager.DockerManager._check_docker")
     @patch("docker.from_env")
@@ -372,41 +366,6 @@ class TestDockerManager:
         assert actual_run_command_str.endswith(" 2>&1")
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
-    def test_copy_to_container(self, mock_subprocess_run, docker_manager, temp_workspace):
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        container_id = "test_container_for_copy"
-
-        # Create a dummy source file on the host
-        src_filename = "test_source_file.txt"
-        host_src_path = os.path.join(temp_workspace, src_filename)
-        with open(host_src_path, "w") as f:
-            f.write("Test content for copy to container")
-
-        container_dest_path = "/app/destination_file.txt"
-
-        result = docker_manager.copy_to_container(container_id, host_src_path, container_dest_path)
-
-        assert result["success"] is True
-        expected_command = ["docker", "cp", host_src_path, f"{container_id}:{container_dest_path}"]
-        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout)
-
-    @patch("ahc_agent.utils.docker_manager.subprocess.run")
-    def test_copy_from_container(self, mock_subprocess_run, docker_manager, temp_workspace):
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        container_id = "test_container_for_copy_from"
-        container_src_path = "/app/source_file_in_container.txt"
-        host_dest_path = os.path.join(temp_workspace, "destination_file_on_host.txt")
-
-        # We don't actually create the source file in the container for this mock test,
-        # as subprocess.run is mocked.
-
-        result = docker_manager.copy_from_container(container_id, container_src_path, host_dest_path)
-
-        assert result["success"] is True
-        expected_command = ["docker", "cp", f"{container_id}:{container_src_path}", host_dest_path]
-        mock_subprocess_run.assert_called_once_with(expected_command, capture_output=True, text=True, check=False, timeout=docker_manager.timeout)
-
-    @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_build_image_existing_dockerfile(self, mock_subprocess_run, docker_manager, temp_workspace):
         mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="Image built successfully", stderr="")
 
@@ -427,7 +386,7 @@ class TestDockerManager:
             capture_output=True,
             text=True,
             check=False,
-            timeout=docker_manager.build_timeout,  # Use build_timeout here
+            timeout=docker_manager.build_timeout,
         )
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")

@@ -18,12 +18,6 @@ class DockerManager:
         "timeout": 300,  # Default timeout in seconds
         "cpp_compiler": "g++",
         "cpp_flags": "-std=c++17 -O2 -Wall",
-        "rust_compiler": "rustc",
-        "rust_flags": "-C opt-level=3",
-        "java_compiler": "javac",
-        "java_flags": "",
-        "python_interpreter": "python3",
-        "python_flags": "",
         "enabled": True,
     }
 
@@ -44,17 +38,8 @@ class DockerManager:
         self.timeout = self.config.get("timeout")
         self.cpp_compiler = self.config.get("cpp_compiler")
         self.cpp_flags = self.config.get("cpp_flags")
-        self.rust_compiler = self.config.get("rust_compiler")
-        self.rust_flags = self.config.get("rust_flags")
-        self.java_compiler = self.config.get("java_compiler")
-        self.java_flags = self.config.get("java_flags")
-        self.python_interpreter = self.config.get("python_interpreter")
-        self.python_flags = self.config.get("python_flags")
         self.enabled = self.config.get("enabled")
         self.build_timeout = self.config.get("build_timeout", 300)  # Add build_timeout
-
-        self.container_id: Optional[str] = None
-        self.workspace_dir: Optional[str] = None  # Should be set before running commands that need it
 
         if self.enabled:
             self._check_docker()
@@ -280,90 +265,6 @@ class DockerManager:
         except (FileNotFoundError, OSError, RuntimeError) as e:
             logger.error(f"Error running C++ executable: {e!s}")
             return {"success": False, "stdout": "", "stderr": str(e), "returncode": -1, "error": str(e)}
-
-    def copy_to_container(self, container_id: str, host_path: str, container_path: str) -> Dict[str, Any]:
-        """
-        Copy a file or directory from the host to a container.
-
-        Args:
-            container_id: ID of the target container.
-            host_path: Path to the source file/directory on the host.
-            container_path: Path to the destination in the container.
-
-        Returns:
-            Dictionary with operation result:
-                - success: True if successful, False otherwise
-                - stdout: Standard output
-                - stderr: Standard error
-                - returncode: Return code
-        """
-        if not self.enabled:
-            self.logger.info("Docker is disabled, skipping copy to container.")
-            return {"success": True, "stdout": "", "stderr": "", "returncode": 0}  # Or indicate disabled
-
-        self.logger.info(f"Copying from host '{host_path}' to container '{container_id}:{container_path}'")
-        cmd = ["docker", "cp", host_path, f"{container_id}:{container_path}"]
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self.timeout,  # Use a reasonable timeout
-            )
-            if result.returncode == 0:
-                self.logger.info("Successfully copied to container.")
-                return {"success": True, "stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
-            self.logger.error(f"Failed to copy to container: {result.stderr.strip()}")
-            return {"success": False, "stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout occurred while copying to container '{container_id}'.")
-            return {"success": False, "stdout": "", "stderr": "Timeout", "returncode": -1}
-        except Exception as e:
-            self.logger.error(f"Error copying to container: {e!s}")
-            return {"success": False, "stdout": "", "stderr": str(e), "returncode": -1}
-
-    def copy_from_container(self, container_id: str, container_path: str, host_path: str) -> Dict[str, Any]:
-        """
-        Copy a file or directory from a container to the host.
-
-        Args:
-            container_id: ID of the source container.
-            container_path: Path to the source file/directory in the container.
-            host_path: Path to the destination on the host.
-
-        Returns:
-            Dictionary with operation result:
-                - success: True if successful, False otherwise
-                - stdout: Standard output
-                - stderr: Standard error
-                - returncode: Return code
-        """
-        if not self.enabled:
-            self.logger.info("Docker is disabled, skipping copy from container.")
-            return {"success": True, "stdout": "", "stderr": "", "returncode": 0}
-
-        self.logger.info(f"Copying from container '{container_id}:{container_path}' to host '{host_path}'")
-        cmd = ["docker", "cp", f"{container_id}:{container_path}", host_path]
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self.timeout,
-            )
-            if result.returncode == 0:
-                self.logger.info("Successfully copied from container.")
-                return {"success": True, "stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
-            self.logger.error(f"Failed to copy from container: {result.stderr.strip()}")
-            return {"success": False, "stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout occurred while copying from container '{container_id}'.")
-            return {"success": False, "stdout": "", "stderr": "Timeout", "returncode": -1}
-        except Exception as e:
-            self.logger.error(f"Error copying from container: {e!s}")
-            return {"success": False, "stdout": "", "stderr": str(e), "returncode": -1}
 
     def build_image(self, context_path: str, dockerfile: Optional[str] = None, image_tag: Optional[str] = None) -> Dict[str, Any]:
         """
