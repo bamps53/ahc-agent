@@ -3,6 +3,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+import questionary
+from questionary import Choice
+
 from ahc_agent.config import Config
 from ahc_agent.core.analyzer import ProblemAnalyzer
 from ahc_agent.core.debugger import ImplementationDebugger
@@ -177,16 +180,32 @@ class SolveService:
             return
 
         running = True
-        current_step = "init"
         problem_analysis_data = analysis
         solution_strategy_data = strategy
         interactive_test_cases = None
         interactive_score_calculator = None
 
         while running:
-            if current_step == "init":
-                print("\n=== AHCAgent Interactive Mode (Service) ===")
-                print(f"Problem: {self.workspace_store.problem_id}")
+            print("\n=== AHCAgent Interactive Mode (Service) ===")
+            print(f"Problem: {self.workspace_store.problem_id}")
+            # Display cursor-selectable menu
+            command = await questionary.select(
+                "Select an operation:",
+                choices=[
+                    Choice("Analyze the problem", "analyze"),
+                    Choice("Develop solution strategy", "strategy"),
+                    Choice("Generate/load test cases", "testcases"),
+                    Choice("Generate initial solution", "initial"),
+                    Choice("Run evolutionary process", "evolve"),
+                    Choice("Show current status", "status"),
+                    Choice("Show help", "help"),
+                    Choice("Exit interactive mode", "exit"),
+                ],
+            ).ask_async()
+
+            if command == "exit":
+                running = False
+            elif command == "help":
                 print("\nAvailable commands:")
                 print("  analyze - Analyze the problem")
                 print("  strategy - Develop solution strategy")
@@ -196,145 +215,156 @@ class SolveService:
                 print("  status - Show current status")
                 print("  help - Show this help")
                 print("  exit - Exit interactive mode")
-                current_step = "command"
+            elif command == "status":
+                print("\n=== Current Status ===")
+                print(f"Problem: {self.workspace_store.problem_id}")
+                print(f"Problem Analysis: {'Loaded/Complete' if problem_analysis_data else 'Not loaded'}")
+                print(f"Solution Strategy: {'Loaded/Complete' if solution_strategy_data else 'Not loaded'}")
+                print(f"Interactive Test Cases: {'Generated' if interactive_test_cases else 'Not generated'}")
+                best_sol = self.workspace_store.get_best_solution()
+                if best_sol:
+                    print(f"Best Score in KB: {best_sol.get('score', 'Unknown')}")
 
-            elif current_step == "command":
-                command = input("\nEnter command: ").strip().lower()
+            elif command == "analyze":
+                print("\nAnalyzing problem...")
+                problem_text = self.workspace_store.load_problem_text()
+                if problem_text is None:
+                    print("Problem text not found. Please load it first.")
+                    continue
+                problem_analysis_data = await self.problem_analyzer.analyze(problem_text)
+                self.workspace_store.save_problem_analysis(problem_analysis_data)
+                print("Problem analysis complete and saved.")
+                print(f"Title: {problem_analysis_data.get('title', 'Unknown')}")
 
-                if command == "exit":
-                    running = False
-                elif command == "help":
-                    current_step = "init"
-                elif command == "status":
-                    print("\n=== Current Status ===")
-                    print(f"Problem: {self.workspace_store.problem_id}")
-                    print(f"Problem Analysis: {'Loaded/Complete'}")
-                    print(f"Solution Strategy: {'Loaded/Complete'}")
-                    print(f"Interactive Test Cases: {'Generated' if interactive_test_cases else 'Not generated'}")
-                    best_sol = self.workspace_store.get_best_solution()
-                    if best_sol:
-                        print(f"Best Score in KB: {best_sol.get('score', 'Unknown')}")
+            elif command == "strategy":
+                print("\nDeveloping solution strategy...")
+                solution_strategy_data = await self.solution_strategist.develop_strategy(problem_analysis_data)
+                self.workspace_store.save_solution_strategy(solution_strategy_data)
+                print("Solution strategy development complete and saved.")
 
-                elif command == "analyze":
-                    print("\nAnalyzing problem...")
-                    problem_text = self.workspace_store.load_problem_text()
-                    if problem_text is None:
-                        print("Problem text not found. Please load it first.")
-                        continue
-                    problem_analysis_data = await self.problem_analyzer.analyze(problem_text)
-                    self.workspace_store.save_problem_analysis(problem_analysis_data)
-                    print("Problem analysis complete and saved.")
-                    print(f"Title: {problem_analysis_data.get('title', 'Unknown')}")
+            elif command == "testcases":
+                # Test case loading option with cursor selection
+                load_option = await questionary.select(
+                    "Select test case acquisition method:",
+                    choices=[
+                        Choice("Load test cases from 'tools/in/'", "load"),
+                        Choice("Generate new test cases", "generate"),
+                    ],
+                ).ask_async()
 
-                elif command == "strategy":
-                    print("\nDeveloping solution strategy...")
-                    solution_strategy_data = await self.solution_strategist.develop_strategy(problem_analysis_data)
-                    self.workspace_store.save_solution_strategy(solution_strategy_data)
-                    print("Solution strategy development complete and saved.")
-
-                elif command == "testcases":
-                    load_option = input("Load test cases from 'tools/in/'? (y/N, default N will generate): ").lower()
-                    if load_option == "y":
-                        tools_in_dir = Path(self.config.get("workspace.base_dir")) / "tools" / "in"
-                        if tools_in_dir.exists() and tools_in_dir.is_dir():
-                            interactive_test_cases = []
-                            for test_file in sorted(tools_in_dir.glob("*.txt")):
-                                with open(test_file) as f:
-                                    interactive_test_cases.append({"name": test_file.name, "input": f.read()})
-                            if interactive_test_cases:
-                                print(f"Loaded {len(interactive_test_cases)} test cases from tools/in/.")
-                            else:
-                                print("No test cases found in tools/in/.")
+                if load_option == "load":
+                    tools_in_dir = Path(self.config.get("workspace.base_dir")) / "tools" / "in"
+                    if tools_in_dir.exists() and tools_in_dir.is_dir():
+                        interactive_test_cases = []
+                        for test_file in sorted(tools_in_dir.glob("*.txt")):
+                            with open(test_file) as f:
+                                interactive_test_cases.append({"name": test_file.name, "input": f.read()})
+                        if interactive_test_cases:
+                            print(f"Loaded {len(interactive_test_cases)} test cases from tools/in/.")
                         else:
-                            print(f"Directory not found: {tools_in_dir}")
-
-                    if not interactive_test_cases:
-                        num_cases_str = input("Number of test cases to generate [default: 3]: ")
-                        num_cases = int(num_cases_str) if num_cases_str.isdigit() else 3
-                        print(f"\nGenerating {num_cases} test cases...")
-                        interactive_test_cases = await self.problem_logic.generate_test_cases(problem_analysis_data, num_cases)
-                        print(f"Generated {len(interactive_test_cases)} test cases.")
-
-                    if interactive_test_cases:
-                        print("Creating score calculator...")
-                        interactive_score_calculator = await self.problem_logic.create_score_calculator(problem_analysis_data)
-                        print("Score calculator created.")
+                            print("No test cases found in tools/in/.")
                     else:
-                        print("No test cases available to create score calculator.")
+                        print(f"Directory not found: {tools_in_dir}")
 
-                elif command == "initial":
-                    print("\nGenerating initial solution...")
-                    initial_code = await self.problem_logic.generate_initial_solution(problem_analysis_data)
-                    self.workspace_store.save_solution("initial", {"code": initial_code, "score": 0, "generation": 0})
-                    print("Initial solution generated and saved to Knowledge Base.")
-                    if input("Show initial solution? [y/N]: ").lower() == "y":
-                        print("\n=== Initial Solution ===")
-                        print(initial_code)
+                if not interactive_test_cases or load_option == "generate":
+                    # Number of test cases with cursor selection
+                    num_cases_str = await questionary.text("Enter the number of test cases to generate [default: 3]:", default="3").ask_async()
+                    num_cases = int(num_cases_str) if num_cases_str.isdigit() else 3
+                    print(f"\nGenerating {num_cases} test cases...")
+                    interactive_test_cases = await self.problem_logic.generate_test_cases(problem_analysis_data, num_cases)
+                    print(f"Generated {len(interactive_test_cases)} test cases.")
 
-                elif command == "evolve":
-                    current_best_sol_kb = self.workspace_store.get_best_solution()
-                    initial_code_for_evolution = ""
-                    if current_best_sol_kb and current_best_sol_kb.get("code"):
-                        initial_code_for_evolution = current_best_sol_kb["code"]
-                        print(f"Using best known solution from KB (score: {current_best_sol_kb.get('score', 'N/A')}) as starting point.")
-                    else:
-                        initial_sol_from_kb = self.workspace_store.get_solution("initial")
-                        if initial_sol_from_kb and initial_sol_from_kb.get("code"):
-                            initial_code_for_evolution = initial_sol_from_kb["code"]
-                            print("Using saved initial solution from KB as starting point.")
-                        else:
-                            print("Generating new initial solution for evolution...")
-                            initial_code_for_evolution = await self.problem_logic.generate_initial_solution(problem_analysis_data)
-                            self.workspace_store.save_solution("initial_for_evolve", {"code": initial_code_for_evolution})
-                            print("Initial solution generated and saved.")
-
-                    temp_engine_config = self.config.get("evolution").copy()
-
-                    default_gens = temp_engine_config.get("max_generations", 30)
-                    max_gens_str = input(f"Maximum generations [default: {default_gens}]: ")
-                    temp_engine_config["max_generations"] = int(max_gens_str) if max_gens_str.isdigit() else default_gens
-
-                    default_pop = temp_engine_config.get("population_size", 10)
-                    pop_size_str = input(f"Population size [default: {default_pop}]: ")
-                    temp_engine_config["population_size"] = int(pop_size_str) if pop_size_str.isdigit() else default_pop
-
-                    default_time_limit = temp_engine_config.get("time_limit_seconds", 1800)
-                    time_limit_str = input(f"Time limit (seconds) [default: {default_time_limit}]: ")
-                    temp_engine_config["time_limit_seconds"] = int(time_limit_str) if time_limit_str.isdigit() else default_time_limit
-
-                    self.evolutionary_engine.max_generations = temp_engine_config["max_generations"]
-                    self.evolutionary_engine.population_size = temp_engine_config["population_size"]
-                    self.evolutionary_engine.time_limit_seconds = temp_engine_config["time_limit_seconds"]
-
-                    async def eval_func(code):
-                        return await self._evaluate_solution_wrapper(
-                            code, interactive_test_cases, interactive_score_calculator, self.implementation_debugger
-                        )
-
-                    print("\nRunning evolutionary process...")
-                    generations_dir = self.workspace_store.solutions_dir / "generations"
-                    ensure_directory(generations_dir)
-
-                    evolution_result = await self.evolutionary_engine.evolve(
-                        problem_analysis_data,
-                        solution_strategy_data,
-                        initial_code_for_evolution,
-                        eval_func,
-                        str(generations_dir),
-                    )
-                    self.workspace_store.save_evolution_log(evolution_result["evolution_log"])
-                    self.workspace_store.save_solution(
-                        "best",
-                        {
-                            "code": evolution_result["best_solution"],
-                            "score": evolution_result["best_score"],
-                            "generation": evolution_result["generations_completed"],
-                        },
-                    )
-                    print(f"\nEvolution complete: {evolution_result['generations_completed']} generations")
-                    print(f"Best score: {evolution_result['best_score']}")
-                    if input("Show best solution? [y/N]: ").lower() == "y":
-                        print("\n=== Best Solution ===")
-                        print(evolution_result["best_solution"])
+                if interactive_test_cases:
+                    print("Creating score calculator...")
+                    interactive_score_calculator = await self.problem_logic.create_score_calculator(problem_analysis_data)
+                    print("Score calculator created.")
                 else:
-                    print(f"Unknown command: {command}")
+                    print("No test cases available to create score calculator.")
+
+            elif command == "initial":
+                print("\nGenerating initial solution...")
+                initial_code = await self.problem_logic.generate_initial_solution(problem_analysis_data)
+                self.workspace_store.save_solution("initial", {"code": initial_code, "score": 0, "generation": 0})
+                print("Initial solution generated and saved to Knowledge Base.")
+
+                # Show initial solution option with cursor selection
+                show_solution = await questionary.confirm("Show initial solution?", default=False).ask_async()
+                if show_solution:
+                    print("\n=== Initial Solution ===")
+                    print(initial_code)
+
+            elif command == "evolve":
+                current_best_sol_kb = self.workspace_store.get_best_solution()
+                initial_code_for_evolution = ""
+                if current_best_sol_kb and current_best_sol_kb.get("code"):
+                    initial_code_for_evolution = current_best_sol_kb["code"]
+                    print(f"Using best known solution from KB (score: {current_best_sol_kb.get('score', 'N/A')}) as starting point.")
+                else:
+                    initial_sol_from_kb = self.workspace_store.get_solution("initial")
+                    if initial_sol_from_kb and initial_sol_from_kb.get("code"):
+                        initial_code_for_evolution = initial_sol_from_kb["code"]
+                        print("Using saved initial solution from KB as starting point.")
+                    else:
+                        print("Generating new initial solution for evolution...")
+                        initial_code_for_evolution = await self.problem_logic.generate_initial_solution(problem_analysis_data)
+                        self.workspace_store.save_solution("initial_for_evolve", {"code": initial_code_for_evolution})
+                        print("Initial solution generated and saved.")
+
+                temp_engine_config = self.config.get("evolution").copy()
+
+                # Maximum generations with cursor selection
+                default_gens = temp_engine_config.get("max_generations", 30)
+                max_gens_str = await questionary.text(f"Maximum generations [default: {default_gens}]:", default=str(default_gens)).ask_async()
+                temp_engine_config["max_generations"] = int(max_gens_str) if max_gens_str.isdigit() else default_gens
+
+                # Population size with cursor selection
+                default_pop = temp_engine_config.get("population_size", 10)
+                pop_size_str = await questionary.text(f"Population size [default: {default_pop}]:", default=str(default_pop)).ask_async()
+                temp_engine_config["population_size"] = int(pop_size_str) if pop_size_str.isdigit() else default_pop
+
+                # Time limit with cursor selection
+                default_time_limit = temp_engine_config.get("time_limit_seconds", 1800)
+                time_limit_str = await questionary.text(
+                    f"Time limit (seconds) [default: {default_time_limit}]:", default=str(default_time_limit)
+                ).ask_async()
+                temp_engine_config["time_limit_seconds"] = int(time_limit_str) if time_limit_str.isdigit() else default_time_limit
+
+                self.evolutionary_engine.max_generations = temp_engine_config["max_generations"]
+                self.evolutionary_engine.population_size = temp_engine_config["population_size"]
+                self.evolutionary_engine.time_limit_seconds = temp_engine_config["time_limit_seconds"]
+
+                async def eval_func(code):
+                    return await self._evaluate_solution_wrapper(
+                        code, interactive_test_cases, interactive_score_calculator, self.implementation_debugger
+                    )
+
+                print("\nRunning evolutionary process...")
+                generations_dir = self.workspace_store.solutions_dir / "generations"
+                ensure_directory(generations_dir)
+
+                evolution_result = await self.evolutionary_engine.evolve(
+                    problem_analysis_data,
+                    solution_strategy_data,
+                    initial_code_for_evolution,
+                    eval_func,
+                    str(generations_dir),
+                )
+                self.workspace_store.save_evolution_log(evolution_result["evolution_log"])
+                self.workspace_store.save_solution(
+                    "best",
+                    {
+                        "code": evolution_result["best_solution"],
+                        "score": evolution_result["best_score"],
+                        "generation": evolution_result["generations_completed"],
+                    },
+                )
+                print(f"\nEvolution complete: {evolution_result['generations_completed']} generations")
+                print(f"Best score: {evolution_result['best_score']}")
+
+                # Show best solution option with cursor selection
+                show_best = await questionary.confirm("Show best solution?", default=False).ask_async()
+                if show_best:
+                    print("\n=== Best Solution ===")
+                    print(evolution_result["best_solution"])
+            else:
+                print(f"Unknown command: {command}")

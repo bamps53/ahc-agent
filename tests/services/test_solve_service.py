@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -402,10 +402,10 @@ async def test_evaluate_solution_wrapper(mock_llm_client, mock_docker_manager, m
 @patch("ahc_agent.services.solve_service.EvolutionaryEngine")  # Not strictly needed
 @patch("ahc_agent.services.solve_service.SolutionStrategist")  # Not strictly needed
 @patch("ahc_agent.services.solve_service.ProblemAnalyzer")
-@patch("builtins.input")  # To mock user input
+@patch("ahc_agent.services.solve_service.questionary.select")
 @pytest.mark.asyncio
 async def test_run_interactive_solve_basic_analyze_and_exit(
-    mock_input,
+    mock_questionary_select,
     MockProblemAnalyzer,
     MockSolutionStrategist,
     MockEvolutionaryEngine,
@@ -438,8 +438,10 @@ async def test_run_interactive_solve_basic_analyze_and_exit(
 
     service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, workspace_store=mock_workspace_store)
 
-    # Simulate user typing "analyze" then "exit"
-    mock_input.side_effect = ["analyze", "exit"]
+    # Simulate user selecting "analyze" then "exit"
+    mock_select = AsyncMock()
+    mock_select.ask_async.side_effect = ["analyze", "exit"]
+    mock_questionary_select.return_value = mock_select
 
     # Act
     # run_interactive_solve is called by run_solve if interactive=True
@@ -457,6 +459,7 @@ async def test_run_interactive_solve_basic_analyze_and_exit(
     # Check that the analysis was saved
     mock_workspace_store.save_problem_analysis.assert_called_once_with({"title": "Interactive Analysis"})
 
-    # Check that input was called twice
-    assert mock_input.call_count == 2
-    mock_input.assert_has_calls([call("\nEnter command: "), call("\nEnter command: ")])
+    # Check that questionary.select was called twice
+    assert mock_questionary_select.call_count == 2
+    # First call for main menu, second call would be after selecting "analyze"
+    mock_questionary_select.assert_called()
