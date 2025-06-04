@@ -310,7 +310,7 @@ class TestDockerManager:
 
         # Check result
         assert result["success"] is True
-        assert result["stdout"] == "Compilation successful"
+        assert result["stdout"] == "Compilation successful."
         assert result["stderr"] == ""
         assert result["returncode"] == 0
         assert "executable_path" in result
@@ -474,16 +474,15 @@ class TestDockerManager:
         assert result["stdout"] == "Compilation successful."
         assert result["stderr"] == ""
         assert "executable_path" in result
-        assert result["executable_path"] == os.path.join(temp_workspace, "main") # Default output filename
+        assert result["executable_path"] == os.path.join(temp_workspace, "main")  # Default output filename
         assert result["original_stdout"] == mock_gpp_result.stdout
         assert result["original_stderr"] == mock_gpp_result.stderr
 
         # Check that subprocess.run was called correctly
         expected_compile_cmd_str_part = f"g++ -std=c++17 -O2 -Wall {source_filename} -o main"
         called_args_list = mock_subprocess_run.call_args[0][0]
-        actual_compile_command_str = called_args_list[-1] # The command is the last element
+        actual_compile_command_str = called_args_list[-1]  # The command is the last element
         assert actual_compile_command_str == expected_compile_cmd_str_part
-
 
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_compile_cpp_failure_filtered_output(self, mock_subprocess_run, docker_manager, temp_workspace):
@@ -502,18 +501,18 @@ class TestDockerManager:
 
         # Mock the subprocess.run call
         mock_gpp_result = MagicMock()
-        mock_gpp_result.returncode = 1 # Compilation failure
+        mock_gpp_result.returncode = 1  # Compilation failure
         mock_gpp_result.stdout = "g++ stdout for failure (can be empty or contain messages)"
         # Simulate a typical g++ error message structure
         raw_gpp_error = (
             f"{source_filename}: In function 'int main()':\n"
             f"{source_filename}:3:52: error: expected ';' before 'return'\n"
-            "     std::cout << \"Hello World!\" << std::endl // Missing semicolon\n"
+            '     std::cout << "Hello World!" << std::endl // Missing semicolon\n'
             "                                                    ^\n"
             "                                                    ;\n"
             "return 0;\n"
             "~~~~~~~\n"
-            "compilation terminated due to -Wfatal-errors.\n" # Example of other messages
+            "compilation terminated due to -Wfatal-errors.\n"  # Example of other messages
         )
         mock_gpp_result.stderr = raw_gpp_error
         mock_subprocess_run.return_value = mock_gpp_result
@@ -531,8 +530,7 @@ class TestDockerManager:
         # Check if the line number and column are present, indicating it's a structured error line
         assert f"{source_filename}:3:52:" in result["stderr"]
 
-
-        assert "executable_path" not in result # No executable path on failure
+        assert "executable_path" not in result  # No executable path on failure
         assert result["original_stdout"] == mock_gpp_result.stdout
         assert result["original_stderr"] == raw_gpp_error
 

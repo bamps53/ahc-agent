@@ -439,7 +439,7 @@ class EvolutionaryEngine:
                 if eval_details.get("success") is False and "original_stderr" in eval_details:
                     error_message = f"Compilation failed. Error messages:\n{eval_details.get('stderr', 'No stderr provided.')}"
                 else:
-                    error_message = str(eval_details) # Keep current behavior for other types of evaluation details
+                    error_message = str(eval_details)  # Keep current behavior for other types of evaluation details
             elif eval_details is not None:
                 error_message = str(eval_details)
             else:
@@ -479,7 +479,7 @@ class EvolutionaryEngine:
             ```
             """
 
-            if "Compilation failed. Error messages:" in error_message: # Check if we formatted it as a compilation error
+            if "Compilation failed. Error messages:" in error_message:  # Check if we formatted it as a compilation error
                 logger.info(f"Attempting mutation for a solution that failed compilation. LLM Prompt:\n{prompt}")
 
             # Generate mutated solution

@@ -199,10 +199,7 @@ class DockerManager:
             original_stderr = result["stderr"]
 
             if not result["success"]:
-                error_lines = []
-                for line in original_stderr.splitlines():
-                    if re.search(r".*error:.*|.*warning:.*", line):
-                        error_lines.append(line)
+                error_lines = [line for line in original_stderr.splitlines() if re.search(r".*error:.*|.*warning:.*", line)]
                 result["stderr"] = "\n".join(error_lines)
                 result["stdout"] = "Compilation failed. See stderr for details."
             else:
