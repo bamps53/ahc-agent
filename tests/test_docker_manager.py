@@ -444,3 +444,99 @@ class TestDockerManager:
     @patch("ahc_agent.utils.docker_manager.subprocess.run")
     def test_run_container_with_volume_mapping(self, mock_subprocess_run, docker_manager, temp_workspace):
         pass
+
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
+    def test_compile_cpp_success_filtered_output(self, mock_subprocess_run, docker_manager, temp_workspace):
+        """Test compile_cpp with successful compilation and filtered output."""
+        cpp_code = """
+        #include <iostream>
+        int main() {
+            std::cout << "Hello World!" << std::endl;
+            return 0;
+        }
+        """
+        source_filename = "main.cpp"
+        source_filepath = os.path.join(temp_workspace, source_filename)
+        with open(source_filepath, "w") as f:
+            f.write(cpp_code)
+
+        # Mock the subprocess.run call made by docker_manager.run_command
+        # This simulates the output of 'docker run ... g++ ...'
+        mock_gpp_result = MagicMock()
+        mock_gpp_result.returncode = 0
+        mock_gpp_result.stdout = "g++ stdout for success (e.g. linker messages, often empty)"
+        mock_gpp_result.stderr = "g++ stderr for success (e.g. warnings like -Wunused-variable)"
+        mock_subprocess_run.return_value = mock_gpp_result
+
+        result = docker_manager.compile_cpp(source_file=source_filename, work_dir=temp_workspace)
+
+        assert result["success"] is True
+        assert result["stdout"] == "Compilation successful."
+        assert result["stderr"] == ""
+        assert "executable_path" in result
+        assert result["executable_path"] == os.path.join(temp_workspace, "main") # Default output filename
+        assert result["original_stdout"] == mock_gpp_result.stdout
+        assert result["original_stderr"] == mock_gpp_result.stderr
+
+        # Check that subprocess.run was called correctly
+        expected_compile_cmd_str_part = f"g++ -std=c++17 -O2 -Wall {source_filename} -o main"
+        called_args_list = mock_subprocess_run.call_args[0][0]
+        actual_compile_command_str = called_args_list[-1] # The command is the last element
+        assert actual_compile_command_str == expected_compile_cmd_str_part
+
+
+    @patch("ahc_agent.utils.docker_manager.subprocess.run")
+    def test_compile_cpp_failure_filtered_output(self, mock_subprocess_run, docker_manager, temp_workspace):
+        """Test compile_cpp with failed compilation and filtered error output."""
+        cpp_code_with_error = """
+        #include <iostream>
+        int main() {
+            std::cout << "Hello World!" << std::endl // Missing semicolon
+            return 0;
+        }
+        """
+        source_filename = "error.cpp"
+        source_filepath = os.path.join(temp_workspace, source_filename)
+        with open(source_filepath, "w") as f:
+            f.write(cpp_code_with_error)
+
+        # Mock the subprocess.run call
+        mock_gpp_result = MagicMock()
+        mock_gpp_result.returncode = 1 # Compilation failure
+        mock_gpp_result.stdout = "g++ stdout for failure (can be empty or contain messages)"
+        # Simulate a typical g++ error message structure
+        raw_gpp_error = (
+            f"{source_filename}: In function 'int main()':\n"
+            f"{source_filename}:3:52: error: expected ';' before 'return'\n"
+            "     std::cout << \"Hello World!\" << std::endl // Missing semicolon\n"
+            "                                                    ^\n"
+            "                                                    ;\n"
+            "return 0;\n"
+            "~~~~~~~\n"
+            "compilation terminated due to -Wfatal-errors.\n" # Example of other messages
+        )
+        mock_gpp_result.stderr = raw_gpp_error
+        mock_subprocess_run.return_value = mock_gpp_result
+
+        result = docker_manager.compile_cpp(source_file=source_filename, work_dir=temp_workspace, output_file="error_exec")
+
+        assert result["success"] is False
+        assert result["stdout"] == "Compilation failed. See stderr for details."
+
+        # Check that only the error line is present in the filtered stderr
+        expected_filtered_error = f"{source_filename}:3:52: error: expected ';' before 'return'"
+        assert expected_filtered_error in result["stderr"]
+        # Ensure other chatter is not in the filtered output
+        assert "compilation terminated due to -Wfatal-errors." not in result["stderr"]
+        # Check if the line number and column are present, indicating it's a structured error line
+        assert f"{source_filename}:3:52:" in result["stderr"]
+
+
+        assert "executable_path" not in result # No executable path on failure
+        assert result["original_stdout"] == mock_gpp_result.stdout
+        assert result["original_stderr"] == raw_gpp_error
+
+        expected_compile_cmd_str_part = f"g++ -std=c++17 -O2 -Wall {source_filename} -o error_exec"
+        called_args_list = mock_subprocess_run.call_args[0][0]
+        actual_compile_command_str = called_args_list[-1]
+        assert actual_compile_command_str == expected_compile_cmd_str_part

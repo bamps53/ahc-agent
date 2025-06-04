@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from typing import Any, ClassVar, Dict, Optional
@@ -194,17 +195,31 @@ class DockerManager:
 
             # Run command
             result = self.run_command(compile_cmd, work_dir)
+            original_stdout = result["stdout"]
+            original_stderr = result["stderr"]
 
-            if result["success"]:
+            if not result["success"]:
+                error_lines = []
+                for line in original_stderr.splitlines():
+                    if re.search(r".*error:.*|.*warning:.*", line):
+                        error_lines.append(line)
+                result["stderr"] = "\n".join(error_lines)
+                result["stdout"] = "Compilation failed. See stderr for details."
+            else:
+                result["stdout"] = "Compilation successful."
+                result["stderr"] = ""
                 # Get absolute path to executable
                 executable_path = os.path.join(work_dir, output_file)
                 result["executable_path"] = executable_path
+
+            result["original_stdout"] = original_stdout
+            result["original_stderr"] = original_stderr
 
             return result
 
         except (OSError, RuntimeError) as e:
             logger.error(f"Error compiling C++ file: {e!s}")
-            return {"success": False, "stdout": "", "stderr": str(e), "error": str(e)}
+            return {"success": False, "stdout": "", "stderr": str(e), "error": str(e), "original_stdout": "", "original_stderr": str(e)}
 
     def run_cpp(self, executable_file: str, work_dir: str, input_data: Optional[str] = None, timeout: Optional[int] = None) -> Dict[str, Any]:
         """
