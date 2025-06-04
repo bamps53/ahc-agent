@@ -42,6 +42,10 @@ This document outlines the development practices, including setting up the envir
 
 ## Running Linters and Tests
 
+## Environment Variables
+
+-   `AHCAGENT_LLM_LOGGING_DISABLED`: If set to `true`, disables logging of LLM API calls. This is useful for development and testing to prevent cluttering the workspace with log files. By default, logging is enabled.
+
 Before committing or pushing changes, and especially before a release, ensure all checks pass.
 
 - **Run Linters (Ruff)**:

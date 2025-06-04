@@ -5,9 +5,11 @@ This module provides utilities for communicating with LLM APIs using LiteLLM.
 """
 
 import asyncio
+import datetime
 import json
 import logging
 import os
+from pathlib import Path
 import re
 from typing import Any, Dict, Optional
 
@@ -93,16 +95,102 @@ class LLMClient:
                 if qualified_model_name in litellm.model_cost or self.model in litellm.model_cost:
                     pass  # OK
                 else:
-                    # もし provider が OpenAI 互換エンドポイントを指す場合、モデル検証は難しい
-                    # ここでは litellm が知っているモデルかどうかを基本とする
-                    raise KeyError(f"Model '{self.model}' (or '{qualified_model_name}') not found in litellm.model_cost.")
+                    logger.warning(
+                        f"Model '{self.model}' with provider '{self.provider}' not found in litellm.model_cost. "
+                        f"This may cause issues if the model is not supported by litellm."
+                    )
+        except Exception as e:
+            logger.warning(f"Error validating model '{self.model}' with provider '{self.provider}': {e!s}")
+            logger.warning("Continuing anyway, but this may cause issues if the model is not supported by litellm.")
 
-        except KeyError as e:
-            logger.warning(f"Model validation failed for {self.model} (KeyError): {e!s}. Proceeding with caution.")
-        except RuntimeError as e:
-            logger.warning(f"Model validation failed for {self.model} (Unexpected Error): {e!s}. Proceeding with caution.")
+        # ワークスペースディレクトリ(外部から設定される)
+        self._workspace_dir = None
 
         logger.info(f"Initialized LLM client with provider: {self.provider}, model: {self.model}")
+
+    def set_workspace_dir(self, workspace_dir):
+        """
+        ワークスペースディレクトリを設定する
+
+        Args:
+            workspace_dir: ワークスペースディレクトリのパス
+        """
+        if workspace_dir:
+            self._workspace_dir = workspace_dir
+
+    def _ensure_log_directory(self, resolved_workspace_dir_or_none=None):
+        """
+        Ensures the log directory exists based on a precedence of configurations.
+
+        Args:
+            resolved_workspace_dir_or_none: The workspace directory explicitly passed to
+                                            generate/generate_json or set via set_workspace_dir().
+                                            Can be None.
+
+        Returns:
+            Path to the log directory, or None if logging is disabled or directory creation fails.
+        """
+        if os.getenv("AHCAGENT_LLM_LOGGING_DISABLED", "false").lower() == "true":
+            logger.debug("LLMClient: Logging is disabled by AHCAGENT_LLM_LOGGING_DISABLED.")
+            return None
+
+        base_dir_for_logs = None
+
+        # Priority 1: Explicit workspace_dir from method arguments or client instance
+        if resolved_workspace_dir_or_none is not None:
+            base_dir_for_logs = Path(resolved_workspace_dir_or_none)
+            logger.debug(f"LLMClient: Using explicit workspace directory for logs: {base_dir_for_logs}")
+            print(f"[_ensure_log_directory] Using explicit workspace_dir: {resolved_workspace_dir_or_none}")
+        else:
+            # Priority 2: Test mode temp workspace (if no explicit workspace was resolved)
+            test_mode_temp_workspace = os.getenv("AHCAGENT_TEST_MODE_TEMP_WORKSPACE")
+            if test_mode_temp_workspace:
+                base_dir_for_logs = Path(test_mode_temp_workspace)
+                print(f"[_ensure_log_directory] Using AHCAGENT_TEST_MODE_TEMP_WORKSPACE: {test_mode_temp_workspace}")
+                logger.debug(f"LLMClient: Using test mode temp workspace (AHCAGENT_TEST_MODE_TEMP_WORKSPACE) for logs: {base_dir_for_logs}")
+            else:
+                # Priority 3: Fallback to CWD (should be rare if app configures SolveService properly or _workspace_dir is set)
+                logger.warning("LLMClient: Workspace directory not resolved. Falling back to CWD for logs.")
+                base_dir_for_logs = Path.cwd()
+                print(f"[_ensure_log_directory] Falling back to CWD: {base_dir_for_logs}")
+
+        log_dir = base_dir_for_logs / "logs"
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"LLMClient: Ensured log directory exists at {log_dir}")
+            print(f"[_ensure_log_directory] Final log_dir: {log_dir}")
+            return log_dir
+        except OSError as e:
+            logger.error(f"LLMClient: Error creating log directory {log_dir}: {e!s}")
+            return None
+
+    def _save_llm_log(self, log_dir, prompt, response, params=None, error=None):
+        """
+        Saves the LLM call details to a log file.
+        """
+        if os.getenv("AHCAGENT_LLM_LOGGING_DISABLED", "false").lower() == "true":
+            return
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        log_file = log_dir / f"llm_call_{timestamp}.json"
+
+        log_data = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "model": self.model,
+            "provider": self.provider,
+            "prompt": prompt,
+            "response": response,
+            "params": params,
+            "error": error,
+        }
+
+        try:
+            with open(log_file, "w", encoding="utf-8") as f:
+                json.dump(log_data, f, ensure_ascii=False, indent=2)
+            logger.debug(f"LLM call log saved to {log_file}")
+            logger.info(f"LLM logs will be saved to: {log_dir}")
+        except Exception as e:
+            logger.error(f"Error saving LLM call log: {e!s}")
 
     async def generate(self, prompt: str, **kwargs) -> str:
         """
@@ -115,33 +203,43 @@ class LLMClient:
         Returns:
             Generated text
         """
+        # Prepare parameters
+        params = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": kwargs.get("temperature", self.temperature),
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "timeout": kwargs.get("timeout", self.timeout),
+        }
+
+        # Add any additional parameters
+        for key, value in kwargs.items():
+            if key not in params:
+                params[key] = value
+
+        # Log request
+        logger.debug(f"Sending request to LLM: {self.model}")
+
+        # Resolve workspace directory for logging
+        # Priority 1: workspace_dir from kwargs
+        # Priority 2: self._workspace_dir (set via set_workspace_dir or constructor)
+        resolved_workspace_dir = kwargs.get("workspace_dir", self._workspace_dir)
+        log_dir = self._ensure_log_directory(resolved_workspace_dir)
+
+        response_text = None
+        error_msg = None
+
         try:
-            # Prepare parameters
-            params = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": kwargs.get("temperature", self.temperature),
-                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-                "timeout": kwargs.get("timeout", self.timeout),
-            }
-
-            # Add any additional parameters
-            for key, value in kwargs.items():
-                if key not in params:
-                    params[key] = value
-
-            # Log request
-            logger.debug(f"Sending request to LLM: {self.model}")
-
             # Send request with retry logic
             current_retry = 0
             while True:
                 try:
                     response = await litellm.acompletion(**params)
-                    text = response.choices[0].message.content
-                    logger.debug(f"Received response from LLM: {len(text)} chars")
-                    return text
+                    response_text = response.choices[0].message.content
+                    logger.debug(f"Received response from LLM: {len(response_text)} chars")
+                    break
                 except Exception as e:
+                    error_msg = str(e)
                     logger.error(f"Error generating text (attempt {current_retry + 1}/{self.max_retries + 1}): {e!s}")
                     if current_retry < self.max_retries:
                         current_retry += 1
@@ -150,10 +248,22 @@ class LLMClient:
                     else:
                         logger.error("Max retries reached. Raising exception.")
                         raise
-
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"Error generating text: {e!s}")
             raise
+        finally:
+            # Save log regardless of success or failure
+            if log_dir:  # Check if log_dir was successfully created
+                self._save_llm_log(
+                    log_dir=log_dir,
+                    prompt=prompt,
+                    response=response_text,
+                    params={k: v for k, v in params.items() if k != "messages"},
+                    error=error_msg,
+                )
+
+        return response_text
 
     async def generate_json(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """
@@ -172,6 +282,13 @@ class LLMClient:
         # Generate text
         text = await self.generate(json_prompt, **kwargs)
 
+        # Get workspace directory from kwargs
+        # workspace_dir = kwargs.get("workspace_dir") # log_dir is not used in this method
+        # log_dir = self._ensure_log_directory(workspace_dir) # log_dir is not used in this method
+
+        result = None
+        # error_msg = None # error_msg is not used in this method
+
         try:
             # Extract JSON from text
             # First, try to find JSON block
@@ -180,6 +297,7 @@ class LLMClient:
             return json.loads(json_text_content)
 
         except json.JSONDecodeError as e:
+            # error_msg = str(e) # error_msg is not used
             logger.error(f"Error parsing JSON: {e!s}")
             logger.error(f"Raw text: {text}")
 
@@ -193,16 +311,20 @@ class LLMClient:
 
                 # Parse fixed JSON
                 result = json.loads(fixed_text)
-
                 logger.info("Successfully fixed and parsed JSON")
-
                 return result
 
             except json.JSONDecodeError as fix_err:
+                # error_msg = f"Failed to fix JSON: {fix_err}" # error_msg is not used
                 logger.error(f"Failed to fix JSON after attempting common corrections: {fix_err!s}")
                 # Raise the original error 'e' to provide context of the first failure
                 raise ValueError(f"LLM did not return valid JSON: {e!s}") from e
 
         except (TypeError, AttributeError, IndexError, ValueError) as e:
+            # error_msg = str(e) # error_msg is not used in this method
             logger.error(f"Error processing JSON response: {e!s}")
             raise
+        finally:
+            # The LLM call is logged by self.generate().
+            # Additional logging for JSON parsing status, if needed, should be handled differently.
+            pass

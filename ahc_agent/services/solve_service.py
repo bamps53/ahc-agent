@@ -32,11 +32,32 @@ class SolveService:
         self.docker_manager = docker_manager
         self.config = config
         self.workspace_store = workspace_store
+
+        # ワークスペースディレクトリのパスを取得
+        self.workspace_dir = self.config.get("workspace.base_dir", str(Path.cwd()))
+
+        # LLMクライアントにワークスペースディレクトリを渡すための辞書
+        self.llm_kwargs = {"workspace_dir": self.workspace_dir}
+
+        # 各コアモジュールにLLMクライアントとワークスペースディレクトリを渡す
         self.problem_analyzer = ProblemAnalyzer(self.llm_client, self.config.get("analyzer"))
         self.solution_strategist = SolutionStrategist(self.llm_client, self.config.get("strategist"))
         self.evolutionary_engine = EvolutionaryEngine(self.llm_client, self.config.get("evolution"))
         self.implementation_debugger = ImplementationDebugger(self.llm_client, self.docker_manager, self.config.get("debugger"))
         self.problem_logic = ProblemLogic(self.llm_client, self.config.get("problem_logic"))
+
+        # 各コアモジュールのLLMクライアントにワークスペースディレクトリを設定
+        self._set_workspace_for_core_modules()
+
+    def _set_workspace_for_core_modules(self):
+        """各コアモジュールのLLMクライアントにワークスペースディレクトリを設定する"""
+        # 各モジュールのLLMクライアントにワークスペースディレクトリを設定
+        modules = [self.problem_analyzer, self.solution_strategist, self.evolutionary_engine, self.implementation_debugger, self.problem_logic]
+
+        for module in modules:
+            if hasattr(module, "llm_client") and module.llm_client is not None:
+                # LLMクライアントにワークスペースディレクトリを設定
+                module.llm_client.set_workspace_dir(self.workspace_dir)
 
     async def _evaluate_solution_wrapper(
         self,
