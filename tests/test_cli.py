@@ -152,141 +152,390 @@ class TestCLI:
     @patch("ahc_agent.cli.Config")
     @patch("ahc_agent.cli.WorkspaceStore")
     @patch("ahc_agent.cli.SolveService")
-    def test_solve_command(self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner):
-        mock_global_config_instance = MagicMock(spec=Config)
-        mock_global_config_instance.get.return_value = {}
-
+    def test_solve_group_default_non_interactive(self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner):
+        """Tests the default 'solve' command (no subcommand, not interactive)."""
         mock_workspace_config_instance = MagicMock(spec=Config)
         mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
             "contest_id": "test_contest",
-            "workspace.base_dir": "/mocked/workspace/path",
-            "llm": {},
-            "docker": {},
+            "workspace.base_dir": "/mocked/workspace/path", # Should be updated by cli
+            "llm": {}, "docker": {},
         }.get(key, default)
-        mock_workspace_config_instance.config_file_path = "/mocked/workspace/path/config.yaml"
-
-        # solve コマンド内で Config がインスタンス化される際のモックを設定
+        mock_workspace_config_instance.config_file_path = "/mocked/ws/config.yaml"
         MockCliConfig.return_value = mock_workspace_config_instance
 
         mock_llm_instance = MockLLMClient.return_value
         mock_docker_instance = MockDockerManager.return_value
-        mock_kb_instance = MockWorkspaceStore.return_value
+        mock_ws_store_instance = MockWorkspaceStore.return_value
 
         mock_solve_service_instance = MockSolveService.return_value
-        mock_solve_service_instance.run_solve = AsyncMock(return_value=None)
+        mock_solve_service_instance.run_solve = AsyncMock(return_value=None) # For non-interactive default
 
         with runner.isolated_filesystem() as temp_dir:
             workspace_path = Path(temp_dir)
             problem_file = workspace_path / "problem.md"
             problem_file.write_text("# Test Problem")
-
             config_file = workspace_path / "config.yaml"
             config_file.write_text(yaml.dump({"contest_id": "test_contest"}))
 
             result = runner.invoke(cli, ["solve", str(workspace_path)])
 
-            assert result.exit_code == 0
-            # solve コマンド内で Config が config_file_path を引数に1回だけ呼び出されることを確認
+            assert result.exit_code == 0, result.output
             MockCliConfig.assert_called_once_with(str(config_file))
+            # Check that base_dir in config was updated to the actual temp workspace_path
+            mock_workspace_config_instance.set.assert_any_call("workspace.base_dir", str(workspace_path))
+
             MockLLMClient.assert_called_once_with({})
             MockDockerManager.assert_called_once_with({})
             MockWorkspaceStore.assert_called_once_with(str(workspace_path), problem_id="test_contest")
-            MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
+            MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_ws_store_instance)
+
             mock_solve_service_instance.run_solve.assert_called_once()
             call_args = mock_solve_service_instance.run_solve.call_args
             assert call_args[1]["problem_text"] == "# Test Problem"
             assert call_args[1]["interactive"] is False
-            assert f"Solving problem in workspace: {workspace_path}" in result.output
+            assert f"Running full solve process in workspace: {workspace_path}" in result.output
 
     @patch("ahc_agent.cli.DockerManager")
     @patch("ahc_agent.cli.LLMClient")
     @patch("ahc_agent.cli.Config")
     @patch("ahc_agent.cli.WorkspaceStore")
     @patch("ahc_agent.cli.SolveService")
-    def test_solve_command_with_workspace(
-        self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
-    ):
-        contest_id = "ahc999"
-        workspace_dir = tmp_path / contest_id
-        workspace_dir.mkdir()
-
-        problem_text_content = "# AHC999 Problem"
-        problem_file = workspace_dir / "problem.md"
-        problem_file.write_text(problem_text_content)
-
-        config_file_content = {"contest_id": contest_id}  # Simplified
-        config_file = workspace_dir / "config.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(config_file_content, f)
-
-        mock_global_config_instance = MagicMock(spec=Config)
-        mock_global_config_instance.get.return_value = {}
+    def test_solve_group_default_interactive(self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner):
+        """Tests the default 'solve' command with --interactive flag."""
         mock_workspace_config_instance = MagicMock(spec=Config)
         mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
-            "contest_id": contest_id,
-            "workspace.base_dir": str(workspace_dir),
-            "llm": {},
-            "docker": {},
+            "contest_id": "test_interactive_contest",
+             "workspace.base_dir": "/mocked/interactive/path",
+            "llm": {}, "docker": {},
         }.get(key, default)
-        mock_workspace_config_instance.config_file_path = str(config_file)
-        # In solve command tests, Config is instantiated once inside solve()
+        mock_workspace_config_instance.config_file_path = "/mocked/interactive_ws/config.yaml"
         MockCliConfig.return_value = mock_workspace_config_instance
 
-        mock_llm_instance = MockLLMClient.return_value
-        mock_docker_instance = MockDockerManager.return_value
-        mock_kb_instance = MockWorkspaceStore.return_value
+        mock_solve_service_instance = MockSolveService.return_value
+        mock_solve_service_instance.run_interactive_solve = AsyncMock(return_value=None)
+
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            problem_file = workspace_path / "problem.md"
+            problem_file.write_text("# Interactive Test Problem")
+            config_file = workspace_path / "config.yaml"
+            config_file.write_text(yaml.dump({"contest_id": "test_interactive_contest"}))
+
+            result = runner.invoke(cli, ["solve", str(workspace_path), "--interactive"])
+
+            assert result.exit_code == 0, result.output
+            # Common setup assertions (Config, LLM, Docker, WorkspaceStore, SolveService instantiation)
+            # are similar to non-interactive, so focus on run_interactive_solve call.
+            mock_solve_service_instance.run_interactive_solve.assert_called_once()
+            call_args = mock_solve_service_instance.run_interactive_solve.call_args
+            assert call_args[1]["problem_text_initial"] == "# Interactive Test Problem"
+            assert f"Running full solve process in workspace: {workspace_path}" in result.output # This message is still printed by solve group before interactive call
+
+    @patch("ahc_agent.cli.Config") # Mock config loading in parent group
+    @patch("ahc_agent.cli.SolveService") # Mock service instance in parent group
+    def test_solve_analyze_subcommand(self, MockSolveService, MockCliConfig, runner):
+        """Tests the 'solve analyze' subcommand."""
+        # Setup mocks for objects created in the parent 'solve' group
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
+            "contest_id": "analyze_test", "workspace.base_dir": "/analyze_ws",
+            "llm": {}, "docker": {} }.get(key, default)
+        MockCliConfig.return_value = mock_workspace_config_instance
 
         mock_solve_service_instance = MockSolveService.return_value
-        mock_solve_service_instance.run_solve = AsyncMock()
+        mock_solve_service_instance.run_analyze_step = AsyncMock(return_value={"title": "Analyzed"})
 
-        result = runner.invoke(cli, ["solve", str(workspace_dir)])
+        # Mock WorkspaceStore instance that would be created and put into ctx.obj
+        # This is tricky because WorkspaceStore is instantiated inside the solve group function.
+        # For subcommands, ctx.obj is populated by the parent. We need to ensure that when
+        # MockSolveService is created, it uses a WorkspaceStore that we can also reference.
+        # The CLI creates SolveService with a WorkspaceStore instance.
+        # We are mocking SolveService itself, so its internal store doesn't matter as much,
+        # but the CLI subcommand uses ws_store from ctx.obj for file paths.
+        # For this test, we can mock the WorkspaceStore class at ahc_agent.cli level
+        # and make its instance have the PROBLEM_ANALYSIS_FILE attribute.
+        with patch("ahc_agent.cli.WorkspaceStore") as MockCliWorkspaceStore:
+            mock_ws_store_instance_for_cli = MockCliWorkspaceStore.return_value
+            mock_ws_store_instance_for_cli.PROBLEM_ANALYSIS_FILE = "problem_analysis.json"
 
-        assert result.exit_code == 0
-        mock_workspace_config_instance.set.assert_called_with("workspace.base_dir", str(workspace_dir))
-        MockWorkspaceStore.assert_called_once_with(str(workspace_dir), problem_id=contest_id)
-        MockSolveService.assert_called_once_with(mock_llm_instance, mock_docker_instance, mock_workspace_config_instance, mock_kb_instance)
-        mock_solve_service_instance.run_solve.assert_called_once_with(problem_text=problem_text_content, interactive=False)
-        assert f"Solving problem in workspace: {workspace_dir}" in result.output
 
-    @patch("ahc_agent.cli.DockerManager")
-    @patch("ahc_agent.cli.LLMClient")
+            with runner.isolated_filesystem() as temp_dir:
+                workspace_path = Path(temp_dir)
+                problem_file = workspace_path / "problem.md"
+                problem_file.write_text("# Analyze Problem")
+                config_file = workspace_path / "config.yaml"
+                config_file.write_text(yaml.dump({"contest_id": "analyze_test"}))
+
+                result = runner.invoke(cli, ["solve", str(workspace_path), "analyze"])
+
+                assert result.exit_code == 0, result.output
+                # Assert that the SolveService method was called
+                mock_solve_service_instance.run_analyze_step.assert_called_once()
+                call_args = mock_solve_service_instance.run_analyze_step.call_args
+                assert call_args[1]["problem_text"] == "# Analyze Problem"
+                assert f"Running analysis for problem in workspace: {workspace_path}" in result.output
+                assert "Analysis complete" in result.output
+
+    def test_solve_subcommand_missing_workspace_files(self, runner):
+        """Test that solve subcommands fail if workspace files are missing."""
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            # Workspace exists but is empty
+            workspace_path.mkdir()
+
+            result_analyze = runner.invoke(cli, ["solve", str(workspace_path), "analyze"])
+            assert result_analyze.exit_code == 1, "Analyze should fail if problem.md missing"
+            assert "problem.md' not found" in result_analyze.output
+
+            # Create problem.md but not config.yaml
+            (workspace_path / "problem.md").write_text("dummy problem")
+            result_strategy = runner.invoke(cli, ["solve", str(workspace_path), "strategy"])
+            assert result_strategy.exit_code == 1, "Strategy should fail if config.yaml missing"
+            assert "config.yaml' not found" in result_strategy.output
+
+            # Test missing workspace directory itself
+            non_existent_ws = Path(temp_dir) / "no_such_ws"
+            result_no_ws = runner.invoke(cli, ["solve", str(non_existent_ws), "analyze"])
+            assert result_no_ws.exit_code == 1
+            assert "Workspace directory" in result_no_ws.output and "not found" in result_no_ws.output
+
+
+    # Placeholder for other subcommand tests (strategy, testcases, initial, evolve)
+    # These would follow a similar pattern to test_solve_analyze_subcommand:
+    # - Mock the specific SolveService method (e.g., run_strategy_step)
+    # - Invoke the CLI subcommand (e.g., runner.invoke(cli, ["solve", <ws>, "strategy"]))
+    # - Assert the mocked service method was called with correct args (parsed from CLI options)
+    # - Test prerequisite file checks specific to the subcommand if any (e.g., strategy needs analysis file)
+
+    # Example for strategy (very basic, needs more detail for options)
     @patch("ahc_agent.cli.Config")
-    @patch("ahc_agent.cli.WorkspaceStore")
     @patch("ahc_agent.cli.SolveService")
-    def test_solve_command_uses_tools_in_files_simplified(
-        self, MockSolveService, MockWorkspaceStore, MockCliConfig, MockLLMClient, MockDockerManager, runner, tmp_path
-    ):
-        workspace_dir = tmp_path / "ahc_test_workspace_tools"
-        workspace_dir.mkdir()
-        tools_dir = workspace_dir / "tools"
-        tools_dir.mkdir()
-        tools_in_dir = tools_dir / "in"
-        tools_in_dir.mkdir()
-        (tools_in_dir / "test01.txt").write_text("input data for test01")
-
-        problem_file = workspace_dir / "problem.md"
-        problem_file.write_text("# Test Problem with Tools")
-        config_file = workspace_dir / "config.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump({"contest_id": "tools_test_contest"}, f)
-
-        mock_global_config_instance = MagicMock(spec=Config)
-        mock_global_config_instance.get.return_value = {}
+    @patch("ahc_agent.cli.WorkspaceStore")
+    def test_solve_strategy_subcommand_success(self, MockCliWorkspaceStore, MockSolveService, MockCliConfig, runner):
         mock_workspace_config_instance = MagicMock(spec=Config)
-        mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
-            "contest_id": "tools_test_contest",
-            "workspace.base_dir": str(workspace_dir),
-            "llm": {},
-            "docker": {},
-        }.get(key, default)
-        mock_workspace_config_instance.config_file_path = str(config_file)
-        # In solve command tests, Config is instantiated once inside solve()
+        mock_workspace_config_instance.get.return_value = {"contest_id": "strat_test"}
         MockCliConfig.return_value = mock_workspace_config_instance
 
         mock_solve_service_instance = MockSolveService.return_value
-        mock_solve_service_instance.run_solve = AsyncMock()
+        mock_solve_service_instance.run_strategy_step = AsyncMock(return_value={"approach": "Mocked Strategy"})
 
-        result = runner.invoke(cli, ["solve", str(workspace_dir)])
+        mock_ws_store_cli_instance = MockCliWorkspaceStore.return_value
+        mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE = "problem_analysis.json"
+        mock_ws_store_cli_instance.SOLUTION_STRATEGY_FILE = "solution_strategy.json"
 
-        assert result.exit_code == 0
-        mock_solve_service_instance.run_solve.assert_called_once()
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            (workspace_path / "problem.md").write_text("problem") # For parent group
+            (workspace_path / "config.yaml").write_text("contest_id: strat_test") # For parent group
+            # Simulate analysis file exists for strategy step's specific check
+            (workspace_path / mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE).write_text("{}")
+
+            result = runner.invoke(cli, ["solve", str(workspace_path), "strategy"])
+            assert result.exit_code == 0, result.output
+            mock_solve_service_instance.run_strategy_step.assert_called_once()
+            assert "Strategy development complete" in result.output
+
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.SolveService")
+    @patch("ahc_agent.cli.WorkspaceStore")
+    def test_solve_strategy_subcommand_no_analysis_file(self, MockCliWorkspaceStore, MockSolveService, MockCliConfig, runner):
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.return_value = {"contest_id": "strat_test_no_analysis"}
+        MockCliConfig.return_value = mock_workspace_config_instance
+
+        mock_solve_service_instance = MockSolveService.return_value
+        mock_solve_service_instance.run_strategy_step = AsyncMock() # Should not be called
+
+        mock_ws_store_cli_instance = MockCliWorkspaceStore.return_value
+        mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE = "problem_analysis.json" # Just for the name
+
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            (workspace_path / "problem.md").write_text("problem")
+            (workspace_path / "config.yaml").write_text("contest_id: strat_test_no_analysis")
+            # IMPORTANT: problem_analysis.json is NOT created here
+
+            result = runner.invoke(cli, ["solve", str(workspace_path), "strategy"])
+
+            assert result.exit_code == 1, result.output
+            mock_solve_service_instance.run_strategy_step.assert_not_called()
+            assert "Problem analysis file ('problem_analysis.json') not found" in result.output
+            assert "Please run the 'analyze' step first" in result.output
+
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.SolveService")
+    @patch("ahc_agent.cli.WorkspaceStore")
+    def test_solve_testcases_subcommand(self, MockCliWorkspaceStore, MockSolveService, MockCliConfig, runner):
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.return_value = {"contest_id": "testcases_test"}
+        MockCliConfig.return_value = mock_workspace_config_instance
+
+        mock_solve_service_instance = MockSolveService.return_value
+        # run_testcases_step returns a dict: {"test_cases": [], "score_calculator": MagicMock()}
+        mock_solve_service_instance.run_testcases_step = AsyncMock(
+            return_value={"test_cases": [{"name": "tc1"}], "score_calculator": MagicMock()}
+        )
+
+        mock_ws_store_cli_instance = MockCliWorkspaceStore.return_value
+        mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE = "problem_analysis.json"
+
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            (workspace_path / "problem.md").write_text("problem")
+            (workspace_path / "config.yaml").write_text("contest_id: testcases_test")
+            (workspace_path / mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE).write_text("{}") # Prereq for testcases step
+
+            # Test case 1: --load-tools
+            result_load = runner.invoke(cli, ["solve", str(workspace_path), "testcases", "--load-tools"])
+            assert result_load.exit_code == 0, result_load.output
+            mock_solve_service_instance.run_testcases_step.assert_called_with(load_from_tools=True, num_to_generate=3) # Default num_cases
+            assert "test cases are now prepared" in result_load.output
+
+            # Test case 2: --force-generate --num-cases 5
+            mock_solve_service_instance.run_testcases_step.reset_mock() # Reset for next call
+            result_gen = runner.invoke(cli, ["solve", str(workspace_path), "testcases", "--force-generate", "--num-cases", "5"])
+            assert result_gen.exit_code == 0, result_gen.output
+            mock_solve_service_instance.run_testcases_step.assert_called_with(load_from_tools=False, num_to_generate=5)
+            assert "test cases are now prepared" in result_gen.output
+
+            # Test case 3: Default (should generate with default num_cases)
+            mock_solve_service_instance.run_testcases_step.reset_mock()
+            result_default = runner.invoke(cli, ["solve", str(workspace_path), "testcases"])
+            assert result_default.exit_code == 0, result_default.output
+            # CLI logic: if not force_generate and not load_tools, service_should_try_load is False
+            mock_solve_service_instance.run_testcases_step.assert_called_with(load_from_tools=False, num_to_generate=3)
+            assert "test cases are now prepared" in result_default.output
+
+            # Test case 4: Missing analysis file
+            mock_solve_service_instance.run_testcases_step.reset_mock()
+            (workspace_path / mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE).unlink() # Remove analysis file
+            result_no_analysis = runner.invoke(cli, ["solve", str(workspace_path), "testcases"])
+            assert result_no_analysis.exit_code == 1, result_no_analysis.output
+            assert "Problem analysis file ('problem_analysis.json') not found" in result_no_analysis.output
+            mock_solve_service_instance.run_testcases_step.assert_not_called()
+
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.SolveService")
+    @patch("ahc_agent.cli.WorkspaceStore")
+    def test_solve_initial_subcommand(self, MockCliWorkspaceStore, MockSolveService, MockCliConfig, runner):
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        mock_workspace_config_instance.get.return_value = {"contest_id": "initial_test"}
+        MockCliConfig.return_value = mock_workspace_config_instance
+
+        mock_solve_service_instance = MockSolveService.return_value
+        mock_solve_service_instance.run_initial_solution_step = AsyncMock(return_value="initial_code_here")
+
+        mock_ws_store_cli_instance = MockCliWorkspaceStore.return_value
+        mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE = "problem_analysis.json"
+
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            (workspace_path / "problem.md").write_text("problem")
+            (workspace_path / "config.yaml").write_text("contest_id: initial_test")
+
+            # Test success case
+            (workspace_path / mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE).write_text("{}") # Prereq
+            result_success = runner.invoke(cli, ["solve", str(workspace_path), "initial"])
+            assert result_success.exit_code == 0, result_success.output
+            mock_solve_service_instance.run_initial_solution_step.assert_called_once()
+            assert "Initial solution generated and saved" in result_success.output
+
+            # Test missing analysis file
+            mock_solve_service_instance.run_initial_solution_step.reset_mock()
+            (workspace_path / mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE).unlink()
+            result_no_analysis = runner.invoke(cli, ["solve", str(workspace_path), "initial"])
+            assert result_no_analysis.exit_code == 1, result_no_analysis.output
+            assert "Problem analysis file ('problem_analysis.json') not found" in result_no_analysis.output
+            mock_solve_service_instance.run_initial_solution_step.assert_not_called()
+
+    @patch("ahc_agent.cli.Config")
+    @patch("ahc_agent.cli.SolveService")
+    @patch("ahc_agent.cli.WorkspaceStore")
+    def test_solve_evolve_subcommand(self, MockCliWorkspaceStore, MockSolveService, MockCliConfig, runner):
+        mock_workspace_config_instance = MagicMock(spec=Config)
+        # Provide default evolution params for the CLI to pick up if options not given
+        mock_workspace_config_instance.get.side_effect = lambda key, default=None: {
+            "contest_id": "evolve_test",
+            "evolution": {"max_generations": 5, "population_size": 10, "time_limit_seconds": 300}, # Defaults for CLI echo
+            "llm": {}, "docker": {}
+        }.get(key, default if default is not None else {}) # Ensure nested dicts for 'evolution'
+        MockCliConfig.return_value = mock_workspace_config_instance
+
+        mock_solve_service_instance = MockSolveService.return_value
+
+        # Mock for the internal call to run_testcases_step
+        mock_test_cases_data = [{"name": "tc_evolve"}]
+        mock_score_calc = MagicMock()
+        mock_solve_service_instance.run_testcases_step = AsyncMock(
+            return_value={"test_cases": mock_test_cases_data, "score_calculator": mock_score_calc}
+        )
+
+        # Mock for the main run_evolve_step method
+        mock_evolve_results = {"best_solution": "evolved_code", "best_score": 12345, "generations_completed": 5}
+        mock_solve_service_instance.run_evolve_step = AsyncMock(return_value=mock_evolve_results)
+
+        mock_ws_store_cli_instance = MockCliWorkspaceStore.return_value
+        mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE = "problem_analysis.json"
+        mock_ws_store_cli_instance.SOLUTION_STRATEGY_FILE = "solution_strategy.json"
+        mock_ws_store_cli_instance.solutions_dir = Path("mocked_solutions_dir") # For output message
+
+        with runner.isolated_filesystem() as temp_dir:
+            workspace_path = Path(temp_dir)
+            (workspace_path / "problem.md").write_text("problem")
+            (workspace_path / "config.yaml").write_text("contest_id: evolve_test")
+            (workspace_path / mock_ws_store_cli_instance.PROBLEM_ANALYSIS_FILE).write_text("{}") # Prereq
+            (workspace_path / mock_ws_store_cli_instance.SOLUTION_STRATEGY_FILE).write_text("{}") # Prereq
+
+            initial_code_content = "def main(): pass"
+            initial_code_file = workspace_path / "my_initial_code.py"
+            initial_code_file.write_text(initial_code_content)
+
+            # Test case 1: All options provided
+            result_all_opts = runner.invoke(cli, [
+                "solve", str(workspace_path), "evolve",
+                "--generations", "10",
+                "--population", "20",
+                "--time-limit", "600",
+                "--initial-code-path", str(initial_code_file)
+            ])
+            assert result_all_opts.exit_code == 0, result_all_opts.output
+            mock_solve_service_instance.run_testcases_step.assert_called_once_with(load_from_tools=True, num_to_generate=3) # CLI default for internal call
+            mock_solve_service_instance.run_evolve_step.assert_called_once_with(
+                test_cases=mock_test_cases_data,
+                score_calculator=mock_score_calc,
+                max_generations=10,
+                population_size=20,
+                time_limit_seconds=600,
+                initial_code_override=initial_code_content
+            )
+            assert "Evolution complete" in result_all_opts.output
+            assert "Best score achieved: 12345" in result_all_opts.output
+
+            # Test case 2: Default evolution parameters (not specified on CLI)
+            mock_solve_service_instance.run_testcases_step.reset_mock()
+            mock_solve_service_instance.run_evolve_step.reset_mock()
+            result_default_params = runner.invoke(cli, ["solve", str(workspace_path), "evolve"])
+            assert result_default_params.exit_code == 0, result_default_params.output
+            mock_solve_service_instance.run_testcases_step.assert_called_once_with(load_from_tools=True, num_to_generate=3)
+            mock_solve_service_instance.run_evolve_step.assert_called_once_with(
+                test_cases=mock_test_cases_data,
+                score_calculator=mock_score_calc,
+                max_generations=5, # From mock_workspace_config_instance
+                population_size=10, # From mock_workspace_config_instance
+                time_limit_seconds=300, # From mock_workspace_config_instance
+                initial_code_override=None
+            )
+
+            # Test case 3: Missing strategy file
+            mock_solve_service_instance.run_testcases_step.reset_mock()
+            mock_solve_service_instance.run_evolve_step.reset_mock()
+            (workspace_path / mock_ws_store_cli_instance.SOLUTION_STRATEGY_FILE).unlink()
+            result_no_strategy = runner.invoke(cli, ["solve", str(workspace_path), "evolve"])
+            assert result_no_strategy.exit_code == 1, result_no_strategy.output
+            assert "Solution strategy file ('solution_strategy.json') not found" in result_no_strategy.output
+            mock_solve_service_instance.run_evolve_step.assert_not_called()
+
+
+# Remove the old test_solve_command_with_workspace and test_solve_command_uses_tools_in_files_simplified
+# as their core logic is now covered by the new group tests or would be part of specific subcommand tests if relevant.
+# The old test_solve_command was effectively renamed and refactored into test_solve_group_default_non_interactive.
