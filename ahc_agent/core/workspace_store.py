@@ -18,6 +18,12 @@ class WorkspaceStore:
     Workspace store for storing and retrieving workspace information.
     """
 
+    PROBLEM_ANALYSIS_FILE: str = "problem_analysis.json"
+    SOLUTION_STRATEGY_FILE: str = "solution_strategy.json"
+    TEST_CASES_FILE: str = "test_cases.json"
+    PROBLEM_TEXT_FILE: str = "problem.md"  # or problem_text.md for backward compatibility in load
+    CONFIG_FILE: str = "config.yaml"
+
     def __init__(self, workspace: str, problem_id: str):
         self.workspace_path = Path(workspace)
         self.problem_id = problem_id
@@ -39,7 +45,7 @@ class WorkspaceStore:
 
     def save_problem_text(self, problem_text: str) -> bool:
         """Save problem text."""
-        problem_path = self.workspace_path / "problem_text.md"
+        problem_path = self.get_problem_text_filepath()
         try:
             with open(problem_path, "w") as f:
                 f.write(problem_text)
@@ -50,9 +56,11 @@ class WorkspaceStore:
 
     def load_problem_text(self) -> Optional[str]:
         """Load problem text."""
-        problem_path = self.workspace_path / "problem_text.md"
-        if not problem_path.exists():
-            problem_path = self.workspace_path / "problem.md"  # 互換性のため
+        problem_path_legacy = self.workspace_path / "problem_text.md"  # Check legacy path first
+        if problem_path_legacy.exists():
+            problem_path = problem_path_legacy
+        else:
+            problem_path = self.get_problem_text_filepath()  # Use current standard path
             if not problem_path.exists():
                 logger.warning(f"Problem text not found at {problem_path}")
                 return None
@@ -74,7 +82,7 @@ class WorkspaceStore:
         Returns:
             True if successful, False otherwise
         """
-        analysis_path = self.workspace_path / "problem_analysis.json"
+        analysis_path = self.get_problem_analysis_filepath()
         try:
             write_json(analysis_path, analysis)
         except OSError as e:
@@ -91,7 +99,7 @@ class WorkspaceStore:
         Returns:
             Problem analysis or None if not found
         """
-        analysis_path = self.workspace_path / "problem_analysis.json"
+        analysis_path = self.get_problem_analysis_filepath()
         if not analysis_path.exists():
             logger.warning(f"Problem analysis not found at {analysis_path}")
             return None
@@ -121,7 +129,7 @@ class WorkspaceStore:
         Returns:
             True if successful, False otherwise
         """
-        strategy_path = self.workspace_path / "solution_strategy.json"
+        strategy_path = self.get_solution_strategy_filepath()
         try:
             write_json(strategy_path, strategy)
         except OSError as e:
@@ -138,7 +146,7 @@ class WorkspaceStore:
         Returns:
             Solution strategy or None if not found
         """
-        strategy_path = self.workspace_path / "solution_strategy.json"
+        strategy_path = self.get_solution_strategy_filepath()
         if not strategy_path.exists():
             logger.warning(f"Solution strategy not found at {strategy_path}")
             return None
@@ -157,6 +165,27 @@ class WorkspaceStore:
             Solution strategy or None if not found
         """
         return self.load_solution_strategy()
+
+    def get_problem_analysis_filepath(self) -> Path:
+        """Get the full path to the problem analysis file."""
+        return self.workspace_path / WorkspaceStore.PROBLEM_ANALYSIS_FILE
+
+    def get_solution_strategy_filepath(self) -> Path:
+        """Get the full path to the solution strategy file."""
+        return self.workspace_path / WorkspaceStore.SOLUTION_STRATEGY_FILE
+
+    def get_test_cases_filepath(self) -> Path:
+        """Get the full path to the test cases file."""
+        return self.workspace_path / WorkspaceStore.TEST_CASES_FILE
+
+    def get_problem_text_filepath(self) -> Path:
+        """Get the full path to the primary problem text file."""
+        # load_problem_text handles fallback to problem_text.md
+        return self.workspace_path / WorkspaceStore.PROBLEM_TEXT_FILE
+
+    def get_config_filepath(self) -> Path:
+        """Get the full path to the config file."""
+        return self.workspace_path / WorkspaceStore.CONFIG_FILE
 
     def save_solution(self, solution_name: str, solution_code: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """

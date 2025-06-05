@@ -46,7 +46,30 @@ def mock_workspace_store(mocker):
     ws.problem_id = "test_problem_ws"
     ws.load_problem_analysis.return_value = None
     ws.load_solution_strategy.return_value = None
-    ws.get_best_solution_code_and_meta.return_value = None
+    ws.get_best_solution_code_and_meta.return_value = None  # For get_best_solution()
+    ws.load_solution_code.return_value = None  # For loading specific solutions like 'initial'
+    ws.load_solution_metadata.return_value = None  # For loading specific solutions like 'initial'
+
+    # Mock for solutions_dir attribute
+    # Used as: self.workspace_store.solutions_dir / "filename.cpp"
+    # Then str(result_of_truediv)
+    mock_final_solution_path = mocker.MagicMock(spec=Path)
+    mock_final_solution_path.__str__.return_value = "mocked/solutions/best.cpp"
+    ws.solutions_dir = mocker.MagicMock(spec=Path)
+    ws.solutions_dir.__truediv__.return_value = mock_final_solution_path
+
+    # Mock for get_workspace_dir() method, used for generations_dir
+    # Used as: workspace_dir / "generations", then str(result)
+    mock_generations_subdir_path = mocker.MagicMock(spec=Path)
+    mock_generations_subdir_path.__str__.return_value = "mocked_workspace/generations"
+
+    mock_workspace_root_path = mocker.MagicMock(spec=Path)
+    # This mock_workspace_root_path is what get_workspace_dir() returns.
+    # When (mock_workspace_root_path / "subdir") is called, it should return another path mock.
+    # For example, if it's used for generations_dir = workspace_dir / "generations"
+    mock_workspace_root_path.__truediv__.return_value = mock_generations_subdir_path
+    ws.get_workspace_dir.return_value = mock_workspace_root_path
+
     return ws
 
 
@@ -466,9 +489,7 @@ async def test_run_interactive_solve_basic_analyze_and_exit(
 
 
 @pytest.mark.asyncio
-async def test_run_analyze_step_success(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_analyze_step_success(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     # We need to ensure that the ProblemAnalyzer used by the service is the one we mock.
     # The SolveService __init__ creates its own ProblemAnalyzer.
@@ -492,10 +513,9 @@ async def test_run_analyze_step_success(
         mock_workspace_store.save_problem_analysis.assert_called_once_with({"title": "Analyzed Problem"})
         assert result == {"title": "Analyzed Problem"}
 
+
 @pytest.mark.asyncio
-async def test_run_analyze_step_no_problem_text_loads_from_store(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_analyze_step_no_problem_text_loads_from_store(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemAnalyzer") as MockProblemAnalyzerGlobal:
         mock_pa_instance_global = MockProblemAnalyzerGlobal.return_value
@@ -508,7 +528,7 @@ async def test_run_analyze_step_no_problem_text_loads_from_store(
         mock_workspace_store.load_problem_text.return_value = stored_problem_text
 
         # Act
-        result = await solve_service.run_analyze_step(problem_text=None) # Pass None or empty string
+        result = await solve_service.run_analyze_step(problem_text=None)  # Pass None or empty string
 
         # Assert
         mock_workspace_store.load_problem_text.assert_called_once()
@@ -516,19 +536,18 @@ async def test_run_analyze_step_no_problem_text_loads_from_store(
         mock_workspace_store.save_problem_analysis.assert_called_once_with({"title": "Analyzed Stored Problem"})
         assert result == {"title": "Analyzed Stored Problem"}
 
+
 @pytest.mark.asyncio
-async def test_run_analyze_step_no_problem_text_and_not_in_store(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_analyze_step_no_problem_text_and_not_in_store(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemAnalyzer") as MockProblemAnalyzerGlobal:
         mock_pa_instance_global = MockProblemAnalyzerGlobal.return_value
-        mock_pa_instance_global.analyze = AsyncMock() # Should not be called
+        mock_pa_instance_global.analyze = AsyncMock()  # Should not be called
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
 
         # Configure mock_workspace_store
-        mock_workspace_store.load_problem_text.return_value = None # Store also has no problem text
+        mock_workspace_store.load_problem_text.return_value = None  # Store also has no problem text
 
         # Act
         result = await solve_service.run_analyze_step(problem_text=None)
@@ -541,9 +560,7 @@ async def test_run_analyze_step_no_problem_text_and_not_in_store(
 
 
 @pytest.mark.asyncio
-async def test_run_strategy_step_success(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_strategy_step_success(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.SolutionStrategist") as MockSolutionStrategistGlobal:
         mock_ss_instance_global = MockSolutionStrategistGlobal.return_value
@@ -563,18 +580,17 @@ async def test_run_strategy_step_success(
         mock_workspace_store.save_solution_strategy.assert_called_once_with({"approach": "Test Strategy"})
         assert result == {"approach": "Test Strategy"}
 
+
 @pytest.mark.asyncio
-async def test_run_strategy_step_no_analysis(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_strategy_step_no_analysis(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.SolutionStrategist") as MockSolutionStrategistGlobal:
         mock_ss_instance_global = MockSolutionStrategistGlobal.return_value
-        mock_ss_instance_global.develop_strategy = AsyncMock() # Should not be called
+        mock_ss_instance_global.develop_strategy = AsyncMock()  # Should not be called
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
 
-        mock_workspace_store.load_problem_analysis.return_value = None # No analysis data
+        mock_workspace_store.load_problem_analysis.return_value = None  # No analysis data
 
         # Act
         result = await solve_service.run_strategy_step()
@@ -587,26 +603,45 @@ async def test_run_strategy_step_no_analysis(
 
 
 @pytest.mark.asyncio
-async def test_run_testcases_step_load_from_tools_success(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_testcases_step_load_from_tools_success(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
-    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, \
-         patch("pathlib.Path") as MockPathClass: # Patch the Path class
-
+    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, patch(
+        "ahc_agent.services.solve_service.Path"  # Patch where Path is looked up
+    ) as MockPathClass:
         # Configure Path mock
-        mock_tools_in_path_instance = MockPathClass.return_value # This is what Path(...) returns
-        mock_tools_in_path_instance.exists.return_value = True
-        mock_tools_in_path_instance.is_dir.return_value = True
+        mock_path_base = MockPathClass.return_value
+        mock_path_tools = MagicMock(spec=Path)
+        mock_path_tools_in = MagicMock(spec=Path)
+
+        mock_path_base.__truediv__.side_effect = lambda segment: mock_path_tools if segment == "tools" else MagicMock(spec=Path)
+        mock_path_tools.__truediv__.side_effect = lambda segment: mock_path_tools_in if segment == "in" else MagicMock(spec=Path)
+
+        mock_path_tools_in.exists.return_value = True
+        mock_path_tools_in.is_dir.return_value = True
+        # mock_tools_in_path_instance is now mock_path_tools_in for assertion purposes
+        mock_tools_in_path_instance = mock_path_tools_in
 
         mock_file_path = MagicMock(spec=Path)
         mock_file_path.name = "0000.txt"
         mock_tools_in_path_instance.glob.return_value = [mock_file_path]
 
-        mocker.patch("builtins.open", mocker.mock_open(read_data="test_input_data"))
+        mock_open_fn = mocker.patch("builtins.open", mocker.mock_open(read_data="test_input_data"))
 
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
-        mock_pl_instance_global.create_score_calculator = AsyncMock(return_value=MagicMock()) # Returns a mock calculator
+        mock_pl_instance_global.create_score_calculator = AsyncMock(return_value=MagicMock())  # Returns a mock calculator
+        mock_pl_instance_global.generate_test_cases = AsyncMock(return_value=[])  # Ensure it's an AsyncMock even if not expected to be called
+
+        # Ensure config mock returns a specific value for 'workspace.base_dir'
+        def mock_config_get_side_effect(key, default=None):
+            print(f"DEBUG: mock_config.get called with key='{key}', default='{default}'")
+            if key == "workspace.base_dir":
+                value = "/mocked/workspace/base"
+                print(f"DEBUG: mock_config.get returning '{value}' for key '{key}'")
+                return value
+            print(f"DEBUG: mock_config.get returning default='{default}' for key '{key}'")
+            return default  # or raise an error if unexpected keys are called
+
+        mock_config.get.side_effect = mock_config_get_side_effect
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
 
@@ -619,13 +654,13 @@ async def test_run_testcases_step_load_from_tools_success(
         # Assert
         mock_workspace_store.load_problem_analysis.assert_called_once()
         # Path(...) was called, then exists(), is_dir(), glob()
-        MockPathClass.assert_called() # Check Path was instantiated
+        MockPathClass.assert_called()  # Check Path was instantiated
         mock_tools_in_path_instance.exists.assert_called_once()
         mock_tools_in_path_instance.is_dir.assert_called_once()
         mock_tools_in_path_instance.glob.assert_called_once_with("*.txt")
 
         # builtins.open was called
-        mocker.mocks["builtins.open"].assert_called_once_with(mock_file_path)
+        mock_open_fn.assert_called_once_with(mock_file_path)
 
         mock_pl_instance_global.generate_test_cases.assert_not_called()
         mock_pl_instance_global.create_score_calculator.assert_called_once_with(sample_analysis_data)
@@ -635,18 +670,17 @@ async def test_run_testcases_step_load_from_tools_success(
         assert result["test_cases"][0]["input"] == "test_input_data"
         assert result["score_calculator"] is not None
 
+
 @pytest.mark.asyncio
 async def test_run_testcases_step_load_from_tools_empty_dir_generates(
     mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
 ):
     # Arrange
-    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, \
-         patch("pathlib.Path") as MockPathClass:
-
+    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, patch("pathlib.Path") as MockPathClass:
         mock_tools_in_path_instance = MockPathClass.return_value
         mock_tools_in_path_instance.exists.return_value = True
         mock_tools_in_path_instance.is_dir.return_value = True
-        mock_tools_in_path_instance.glob.return_value = [] # Empty directory
+        mock_tools_in_path_instance.glob.return_value = []  # Empty directory
 
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
         mock_pl_instance_global.generate_test_cases = AsyncMock(return_value=[{"name": "gen1", "input": "gen_in1"}])
@@ -666,10 +700,9 @@ async def test_run_testcases_step_load_from_tools_empty_dir_generates(
         assert len(result["test_cases"]) == 1
         assert result["test_cases"][0]["name"] == "gen1"
 
+
 @pytest.mark.asyncio
-async def test_run_testcases_step_generate_explicitly(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_testcases_step_generate_explicitly(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal:
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
@@ -689,16 +722,15 @@ async def test_run_testcases_step_generate_explicitly(
         assert result is not None
         assert len(result["test_cases"]) == 1
 
+
 @pytest.mark.asyncio
-async def test_run_testcases_step_no_analysis(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_testcases_step_no_analysis(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal:
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
-        mock_workspace_store.load_problem_analysis.return_value = None # No analysis
+        mock_workspace_store.load_problem_analysis.return_value = None  # No analysis
 
         # Act
         result = await solve_service.run_testcases_step(load_from_tools=False, num_to_generate=3)
@@ -708,17 +740,15 @@ async def test_run_testcases_step_no_analysis(
         mock_pl_instance_global.create_score_calculator.assert_not_called()
         assert result is None
 
+
 @pytest.mark.asyncio
-async def test_run_testcases_step_generation_fails(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_testcases_step_generation_fails(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal:
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
-        mock_pl_instance_global.generate_test_cases = AsyncMock(return_value=[]) # Generation returns empty list
+        mock_pl_instance_global.generate_test_cases = AsyncMock(return_value=[])  # Generation returns empty list
         # create_score_calculator might still be called if analysis exists, but the method should return None overall
         mock_pl_instance_global.create_score_calculator = AsyncMock(return_value=MagicMock())
-
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
         sample_analysis_data = {"title": "Analyzed Problem"}
@@ -736,9 +766,7 @@ async def test_run_testcases_step_generation_fails(
 
 
 @pytest.mark.asyncio
-async def test_run_initial_solution_step_success(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_initial_solution_step_success(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal:
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
@@ -756,22 +784,19 @@ async def test_run_initial_solution_step_success(
         # Assert
         mock_workspace_store.load_problem_analysis.assert_called_once()
         mock_pl_instance_global.generate_initial_solution.assert_called_once_with(sample_analysis_data)
-        mock_workspace_store.save_solution.assert_called_once_with(
-            "initial", {"code": expected_code, "score": 0, "generation": 0}
-        )
+        mock_workspace_store.save_solution.assert_called_once_with("initial", {"code": expected_code, "score": 0, "generation": 0})
         assert result == expected_code
 
+
 @pytest.mark.asyncio
-async def test_run_initial_solution_step_no_analysis(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_initial_solution_step_no_analysis(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal:
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
         mock_pl_instance_global.generate_initial_solution = AsyncMock()
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
-        mock_workspace_store.load_problem_analysis.return_value = None # No analysis
+        mock_workspace_store.load_problem_analysis.return_value = None  # No analysis
 
         # Act
         result = await solve_service.run_initial_solution_step()
@@ -783,19 +808,17 @@ async def test_run_initial_solution_step_no_analysis(
 
 
 @pytest.mark.asyncio
-async def test_run_evolve_step_success_with_override_code(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_evolve_step_success_with_override_code(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
-    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, \
-         patch("ahc_agent.services.solve_service.ensure_directory") as mock_ensure_dir: # Mock ensure_directory
-
+    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, patch(
+        "ahc_agent.services.solve_service.ensure_directory"
+    ) as mock_ensure_dir:  # Mock ensure_directory
         mock_ee_instance_global = MockEvolutionaryEngineGlobal.return_value
         expected_evolve_result = {
             "best_solution": "evolved_code",
             "best_score": 1000,
             "generations_completed": 10,
-            "evolution_log": [{"gen": 10, "score": 1000}]
+            "evolution_log": [{"gen": 10, "score": 1000}],
         }
         mock_ee_instance_global.evolve = AsyncMock(return_value=expected_evolve_result)
 
@@ -817,20 +840,20 @@ async def test_run_evolve_step_success_with_override_code(
             max_generations=10,
             population_size=20,
             time_limit_seconds=60,
-            initial_code_override=initial_code_override_arg
+            initial_code_override=initial_code_override_arg,
         )
 
         # Assert
         mock_workspace_store.load_problem_analysis.assert_called_once()
         mock_workspace_store.load_solution_strategy.assert_called_once()
-        mock_ensure_dir.assert_called() # Check generations directory creation helper
+        mock_ensure_dir.assert_called()  # Check generations directory creation helper
 
         mock_ee_instance_global.evolve.assert_called_once()
         call_args = mock_ee_instance_global.evolve.call_args[0]
         assert call_args[0] == sample_analysis
         assert call_args[1] == sample_strategy
-        assert call_args[2] == initial_code_override_arg # Initial code
-        assert callable(call_args[3]) # eval_func
+        assert call_args[2] == initial_code_override_arg  # Initial code
+        assert callable(call_args[3])  # eval_func
         # generations_dir path is based on workspace_store.get_workspace_dir()
         # We can check that it's a string path.
         assert isinstance(call_args[4], str)
@@ -845,21 +868,22 @@ async def test_run_evolve_step_success_with_override_code(
             {
                 "code": expected_evolve_result["best_solution"],
                 "score": expected_evolve_result["best_score"],
-                "generation": expected_evolve_result["generations_completed"]
-            }
+                "generation": expected_evolve_result["generations_completed"],
+            },
         )
         assert result == expected_evolve_result
 
-@pytest.mark.asyncio
-async def test_run_evolve_step_success_load_best_from_kb(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
-    # Arrange
-    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, \
-         patch("ahc_agent.services.solve_service.ensure_directory"):
 
+@pytest.mark.asyncio
+async def test_run_evolve_step_success_load_best_from_kb(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
+    # Arrange
+    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, patch(
+        "ahc_agent.services.solve_service.ensure_directory"
+    ):
         mock_ee_instance_global = MockEvolutionaryEngineGlobal.return_value
-        mock_ee_instance_global.evolve = AsyncMock(return_value={"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []})
+        mock_ee_instance_global.evolve = AsyncMock(
+            return_value={"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []}
+        )
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
         mock_workspace_store.load_problem_analysis.return_value = {"title": "Analysis"}
@@ -867,61 +891,71 @@ async def test_run_evolve_step_success_load_best_from_kb(
 
         kb_best_code = {"code": "kb_best_code", "score": 100}
         mock_workspace_store.get_best_solution.return_value = kb_best_code
-        mock_workspace_store.get_solution.return_value = None # initial from KB not used
+        # mock_workspace_store.get_solution was removed, load_solution_code/metadata will return None by default from fixture
 
         # Act
         await solve_service.run_evolve_step(
-            test_cases=[{"name": "tc1"}], score_calculator=MagicMock(),
-            max_generations=1, population_size=1, time_limit_seconds=1,
-            initial_code_override=None # This is key for this test
+            test_cases=[{"name": "tc1"}],
+            score_calculator=MagicMock(),
+            max_generations=1,
+            population_size=1,
+            time_limit_seconds=1,
+            initial_code_override=None,  # This is key for this test
         )
 
         # Assert
         mock_ee_instance_global.evolve.assert_called_once()
         assert mock_ee_instance_global.evolve.call_args[0][2] == kb_best_code["code"]
 
-@pytest.mark.asyncio
-async def test_run_evolve_step_success_load_initial_from_kb(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
-    # Arrange
-    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, \
-         patch("ahc_agent.services.solve_service.ensure_directory"):
 
+@pytest.mark.asyncio
+async def test_run_evolve_step_success_load_initial_from_kb(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
+    # Arrange
+    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, patch(
+        "ahc_agent.services.solve_service.ensure_directory"
+    ):
         mock_ee_instance_global = MockEvolutionaryEngineGlobal.return_value
-        mock_ee_instance_global.evolve = AsyncMock(return_value={"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []})
+        mock_ee_instance_global.evolve = AsyncMock(
+            return_value={"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []}
+        )
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
         mock_workspace_store.load_problem_analysis.return_value = {"title": "Analysis"}
         mock_workspace_store.load_solution_strategy.return_value = {"approach": "Strategy"}
 
-        mock_workspace_store.get_best_solution.return_value = None # No "best" from KB
-        kb_initial_code = {"code": "kb_initial_code"}
-        mock_workspace_store.get_solution.return_value = kb_initial_code # "initial" from KB
+        mock_workspace_store.get_best_solution.return_value = None  # No "best" from KB
+        kb_initial_code_content = "initial_code_from_kb"
+        kb_initial_meta = {"score": 99}
+        mock_workspace_store.load_solution_code.return_value = kb_initial_code_content
+        mock_workspace_store.load_solution_metadata.return_value = kb_initial_meta
 
         # Act
         await solve_service.run_evolve_step(
-            test_cases=[{"name": "tc1"}], score_calculator=MagicMock(),
-            max_generations=1, population_size=1, time_limit_seconds=1,
-            initial_code_override=None
+            test_cases=[{"name": "tc1"}],
+            score_calculator=MagicMock(),
+            max_generations=1,
+            population_size=1,
+            time_limit_seconds=1,
+            initial_code_override=None,
         )
 
         # Assert
-        mock_workspace_store.get_solution.assert_called_once_with("initial")
+        mock_workspace_store.load_solution_code.assert_called_once_with("initial")
+        mock_workspace_store.load_solution_metadata.assert_called_once_with("initial")
         mock_ee_instance_global.evolve.assert_called_once()
-        assert mock_ee_instance_global.evolve.call_args[0][2] == kb_initial_code["code"]
+        assert mock_ee_instance_global.evolve.call_args[0][2] == kb_initial_code_content
+
 
 @pytest.mark.asyncio
-async def test_run_evolve_step_success_generate_new_initial(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_evolve_step_success_generate_new_initial(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
-    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, \
-         patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, \
-         patch("ahc_agent.services.solve_service.ensure_directory"):
-
+    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, patch(
+        "ahc_agent.services.solve_service.ProblemLogic"
+    ) as MockProblemLogicGlobal, patch("ahc_agent.services.solve_service.ensure_directory"):
         mock_ee_instance_global = MockEvolutionaryEngineGlobal.return_value
-        mock_ee_instance_global.evolve = AsyncMock(return_value={"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []})
+        mock_ee_instance_global.evolve = AsyncMock(
+            return_value={"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []}
+        )
 
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
         generated_code = "generated_initial_code"
@@ -933,28 +967,30 @@ async def test_run_evolve_step_success_generate_new_initial(
         mock_workspace_store.load_problem_analysis.return_value = sample_analysis
         mock_workspace_store.load_solution_strategy.return_value = {"approach": "Strategy"}
         mock_workspace_store.get_best_solution.return_value = None
-        mock_workspace_store.get_solution.return_value = None # No initial from KB either
+        # mock_workspace_store.get_solution was removed, load_solution_code/metadata will return None by default from fixture
 
         # Act
         await solve_service.run_evolve_step(
-            test_cases=[{"name": "tc1"}], score_calculator=MagicMock(),
-            max_generations=1, population_size=1, time_limit_seconds=1,
-            initial_code_override=None
+            test_cases=[{"name": "tc1"}],
+            score_calculator=MagicMock(),
+            max_generations=1,
+            population_size=1,
+            time_limit_seconds=1,
+            initial_code_override=None,
         )
 
         # Assert
         mock_pl_instance_global.generate_initial_solution.assert_called_once_with(sample_analysis)
-        mock_workspace_store.save_solution.assert_any_call( # Use any_call due to best solution also being saved
+        mock_workspace_store.save_solution.assert_any_call(  # Use any_call due to best solution also being saved
             "initial_for_evolve", {"code": generated_code, "score": 0, "generation": 0}
         )
         mock_ee_instance_global.evolve.assert_called_once()
         assert mock_ee_instance_global.evolve.call_args[0][2] == generated_code
 
+
 @pytest.mark.parametrize("missing_item", ["analysis", "strategy", "test_cases", "score_calculator"])
 @pytest.mark.asyncio
-async def test_run_evolve_step_missing_prerequisites(
-    missing_item, mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_evolve_step_missing_prerequisites(missing_item, mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal:
         mock_ee_instance_global = MockEvolutionaryEngineGlobal.return_value
@@ -978,31 +1014,29 @@ async def test_run_evolve_step_missing_prerequisites(
 
         # Act
         result = await solve_service.run_evolve_step(
-            test_cases=test_cases_arg,
-            score_calculator=score_calculator_arg,
-            max_generations=1, population_size=1, time_limit_seconds=1
+            test_cases=test_cases_arg, score_calculator=score_calculator_arg, max_generations=1, population_size=1, time_limit_seconds=1
         )
 
         # Assert
         mock_ee_instance_global.evolve.assert_not_called()
         assert result is None
 
-@pytest.mark.asyncio
-async def test_run_evolve_step_eval_func_integration(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
-    # Arrange
-    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, \
-         patch.object(SolveService, "_evaluate_solution_wrapper", new_callable=AsyncMock) as mock_eval_wrapper, \
-         patch("ahc_agent.services.solve_service.ensure_directory"):
 
+@pytest.mark.asyncio
+async def test_run_evolve_step_eval_func_integration(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
+    # Arrange
+    with patch("ahc_agent.services.solve_service.EvolutionaryEngine") as MockEvolutionaryEngineGlobal, patch.object(
+        SolveService, "_evaluate_solution_wrapper", new_callable=AsyncMock
+    ) as mock_eval_wrapper, patch("ahc_agent.services.solve_service.ensure_directory"):
         mock_ee_instance_global = MockEvolutionaryEngineGlobal.return_value
         # Let evolve capture the passed eval_func
         captured_eval_func = None
+
         async def capture_func_then_return(*args, **kwargs):
             nonlocal captured_eval_func
-            captured_eval_func = args[3] # eval_func is the 4th positional arg
+            captured_eval_func = args[3]  # eval_func is the 4th positional arg
             return {"best_solution": "code", "best_score": 1, "generations_completed": 1, "evolution_log": []}
+
         mock_ee_instance_global.evolve = AsyncMock(side_effect=capture_func_then_return)
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
@@ -1014,9 +1048,7 @@ async def test_run_evolve_step_eval_func_integration(
 
         # Act
         await solve_service.run_evolve_step(
-            test_cases=mock_test_cases,
-            score_calculator=mock_score_calculator,
-            max_generations=1, population_size=1, time_limit_seconds=1
+            test_cases=mock_test_cases, score_calculator=mock_score_calculator, max_generations=1, population_size=1, time_limit_seconds=1
         )
 
         # Assert that evolve was called (which it was, by side_effect)
@@ -1031,17 +1063,16 @@ async def test_run_evolve_step_eval_func_integration(
             test_code_for_eval,
             mock_test_cases,
             mock_score_calculator,
-            solve_service.implementation_debugger # The actual debugger instance from the service
+            solve_service.implementation_debugger,  # The actual debugger instance from the service
         )
 
+
 @pytest.mark.asyncio
-async def test_run_initial_solution_step_generation_fails(
-    mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
-):
+async def test_run_initial_solution_step_generation_fails(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
     # Arrange
     with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal:
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
-        mock_pl_instance_global.generate_initial_solution = AsyncMock(return_value=None) # Generation fails
+        mock_pl_instance_global.generate_initial_solution = AsyncMock(return_value=None)  # Generation fails
 
         solve_service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
 

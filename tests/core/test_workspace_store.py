@@ -60,7 +60,7 @@ class TestWorkspaceStore:
             assert result is True
 
             # Check that file was created
-            assert os.path.exists(os.path.join(temp_dir, "problem_text.md"))
+            assert os.path.exists(os.path.join(temp_dir, WorkspaceStore.PROBLEM_TEXT_FILE))
 
             # Load problem text
             loaded_text = workspace_store.load_problem_text()

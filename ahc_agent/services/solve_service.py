@@ -183,10 +183,17 @@ class SolveService:
                 initial_code_for_evolution = current_best_sol_kb["code"]
                 logger.info(f"Using best known solution from KB (score: {current_best_sol_kb.get('score', 'N/A')}) as starting point.")
             else:
-                initial_sol_from_kb = self.workspace_store.get_solution("initial")
-                if initial_sol_from_kb and initial_sol_from_kb.get("code"):
-                    initial_code_for_evolution = initial_sol_from_kb["code"]
-                    logger.info("Using saved initial solution from KB as starting point.")
+                initial_code = self.workspace_store.load_solution_code("initial")
+                initial_sol_from_kb_dict = None
+                if initial_code:
+                    metadata = self.workspace_store.load_solution_metadata("initial")
+                    initial_sol_from_kb_dict = {"code": initial_code}
+                    if metadata:
+                        initial_sol_from_kb_dict.update(metadata)
+
+                if initial_sol_from_kb_dict and initial_sol_from_kb_dict.get("code"):
+                    initial_code_for_evolution = initial_sol_from_kb_dict["code"]
+                    logger.info("Using initial solution from knowledge base (loaded code and meta).")
                 else:
                     logger.info("Generating new initial solution for evolution as no prior solution was found or provided...")
                     initial_code_for_evolution = await self.problem_logic.generate_initial_solution(problem_analysis_data)
