@@ -676,11 +676,25 @@ async def test_run_testcases_step_load_from_tools_empty_dir_generates(
     mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
 ):
     # Arrange
-    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, patch("pathlib.Path") as MockPathClass:
-        mock_tools_in_path_instance = MockPathClass.return_value
-        mock_tools_in_path_instance.exists.return_value = True
-        mock_tools_in_path_instance.is_dir.return_value = True
-        mock_tools_in_path_instance.glob.return_value = []  # Empty directory
+    # Simplified mocking for the test after changing the patch target:
+    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, patch(
+        "ahc_agent.services.solve_service.Path"
+    ) as MockPathClassInService:  # Target service's Path
+        # This mock will be returned by Path(config_base_dir)
+        mock_base_dir_path_obj = MagicMock(spec=Path)
+        # This mock will be returned by Path(config_base_dir) / "tools"
+        mock_tools_dir_path_obj = MagicMock(spec=Path)
+        # This mock will be returned by Path(config_base_dir) / "tools" / "in" (i.e. self.tools_in_dir)
+        mock_tools_in_dir_obj = MagicMock(spec=Path)
+        mock_tools_in_dir_obj.exists.return_value = True
+        mock_tools_in_dir_obj.is_dir.return_value = True
+        mock_tools_in_dir_obj.glob.return_value = []  # Empty directory
+
+        # Configure the chain of __truediv__ calls
+        # When Path(config.get("workspace.base_dir")) is called in SolveService, it returns mock_base_dir_path_obj
+        MockPathClassInService.return_value = mock_base_dir_path_obj
+        mock_base_dir_path_obj.__truediv__.return_value = mock_tools_dir_path_obj  # ... / "tools"
+        mock_tools_dir_path_obj.__truediv__.return_value = mock_tools_in_dir_obj  # ... / "in"
 
         mock_pl_instance_global = MockProblemLogicGlobal.return_value
         mock_pl_instance_global.generate_test_cases = AsyncMock(return_value=[{"name": "gen1", "input": "gen_in1"}])
@@ -694,6 +708,10 @@ async def test_run_testcases_step_load_from_tools_empty_dir_generates(
         result = await solve_service.run_testcases_step(load_from_tools=True, num_to_generate=3)
 
         # Assert
+        mock_tools_in_dir_obj.exists.assert_called_once()
+        mock_tools_in_dir_obj.is_dir.assert_called_once()
+        mock_tools_in_dir_obj.glob.assert_called_once_with("*.txt")
+
         mock_pl_instance_global.generate_test_cases.assert_called_once_with(sample_analysis_data, 3)
         mock_pl_instance_global.create_score_calculator.assert_called_once_with(sample_analysis_data)
         assert result is not None
