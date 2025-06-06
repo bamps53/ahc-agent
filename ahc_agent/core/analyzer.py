@@ -5,9 +5,59 @@ This module provides functionality for analyzing AtCoder Heuristic Contest probl
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional  # List を追加
+
+from pydantic import BaseModel, Field, RootModel  # pydantic をインポート
 
 from ahc_agent.utils.llm import LLMClient
+
+
+# Pydanticモデル定義
+class ProblemComponents(BaseModel):
+    title: str
+    description: str
+    constraints: str
+    input_format: str
+    output_format: str
+    scoring: str
+
+
+class ConstraintDetail(BaseModel):
+    min_val: Optional[float | int] = Field(None, alias="min")
+    max_val: Optional[float | int] = Field(None, alias="max")
+    description: Optional[str] = None
+
+
+class Constraints(RootModel[Dict[str, ConstraintDetail]]):
+    pass
+
+
+class FormatLine(BaseModel):
+    line_number: str
+    content: List[str]
+    types: List[str]
+
+
+class StructuredFormat(BaseModel):  # InputFormat と OutputFormat で共通利用
+    line_count: str
+    lines: List[FormatLine]
+
+
+class ScoringRules(BaseModel):
+    objective: str
+    formula: str
+    score: str
+    max_score: Optional[float | int] = None
+
+
+class ProblemCharacteristics(BaseModel):
+    problem_type: str
+    effective_algorithms: List[str]
+    time_complexity: str
+    memory_complexity: str
+    optimization_targets: List[str]
+    potential_pitfalls: List[str]
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +111,12 @@ class ProblemAnalyzer:
         characteristics = await self._extract_characteristics(problem_text, components)
 
         # Combine results
+        serialized_constraints = {k: v.model_dump(exclude_none=True) if isinstance(v, ConstraintDetail) else v for k, v in constraints.items()}
+
         analysis = {
             "title": components.get("title", "Unknown"),
             "description": components.get("description", ""),
-            "constraints": constraints,
+            "constraints": serialized_constraints,
             "input_format": input_format,
             "output_format": output_format,
             "scoring_rules": scoring_rules,
@@ -108,7 +160,8 @@ class ProblemAnalyzer:
         """
 
         try:
-            return await self.llm_client.generate_json(prompt)
+            response_model = await self.llm_client.generate_json(prompt, pydantic_model=ProblemComponents)
+            return response_model.model_dump()
 
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Error extracting problem components: {e!s}")
@@ -136,7 +189,7 @@ class ProblemAnalyzer:
         prompt = f"""
         You are an expert at analyzing AtCoder Heuristic Contest problems.
 
-        Please analyze the following problem constraints and extract them in a structured format:
+        Please analyze the following constraints description and extract them in a structured format:
 
         ```
         {components.get("constraints", "")}
@@ -147,17 +200,15 @@ class ProblemAnalyzer:
         {problem_text}
         ```
 
-        Extract all variables and their constraints in JSON format. For each variable, include:
-        - min: Minimum value
-        - max: Maximum value
-        - description: Description of the variable
-
-        For example:
+        Extract the constraints in JSON format with the following structure:
         ```json
         {{
-            "N": {{"min": 100, "max": 100, "description": "Number of employees"}},
-            "L": {{"min": 500000, "max": 500000, "description": "Number of weeks"}},
-            "T_i": {{"min": 0, "max": 10000, "description": "Target cleaning duties"}}
+            "N": {{"min": 1, "max": 1000}},
+            "M": {{"min": 1, "max": 10000}},
+            "K": {{"min": 1, "max": 50}},
+            "T": {{"min": 1, "max": 100000}},
+            "x_i": {{"min": 0, "max": 999}},
+            "y_i": {{"min": 0, "max": 999}}
         }}
         ```
 
@@ -165,11 +216,12 @@ class ProblemAnalyzer:
         """
 
         try:
-            return await self.llm_client.generate_json(prompt)
+            response_model = await self.llm_client.generate_json(prompt, pydantic_model=Constraints)
+            return response_model.root
 
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Error extracting constraints: {e!s}")
-            return {"time_limit_seconds": 0, "memory_limit_mb": 0, "variables": []}
+            return {}
 
     async def _extract_input_format(self, problem_text: str, components: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -211,7 +263,8 @@ class ProblemAnalyzer:
         """
 
         try:
-            return await self.llm_client.generate_json(prompt)
+            response_model = await self.llm_client.generate_json(prompt, pydantic_model=StructuredFormat)
+            return response_model.model_dump()
 
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Error extracting input format: {e!s}")
@@ -256,7 +309,8 @@ class ProblemAnalyzer:
         """
 
         try:
-            return await self.llm_client.generate_json(prompt)
+            response_model = await self.llm_client.generate_json(prompt, pydantic_model=StructuredFormat)
+            return response_model.model_dump()
 
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Error extracting output format: {e!s}")
@@ -301,7 +355,8 @@ class ProblemAnalyzer:
         """
 
         try:
-            return await self.llm_client.generate_json(prompt)
+            response_model = await self.llm_client.generate_json(prompt, pydantic_model=ScoringRules)
+            return response_model.model_dump()
 
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Error extracting scoring rules: {e!s}")
@@ -349,7 +404,8 @@ class ProblemAnalyzer:
         """
 
         try:
-            return await self.llm_client.generate_json(prompt)
+            response_model = await self.llm_client.generate_json(prompt, pydantic_model=ProblemCharacteristics)
+            return response_model.model_dump()
 
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Error extracting problem characteristics: {e!s}")

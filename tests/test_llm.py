@@ -86,7 +86,6 @@ class TestLLMClient:
         # Verify that response_format with schema was passed to self.generate
         assert "response_format" in call_kwargs
         assert call_kwargs["response_format"]["type"] == "json_object"
-        assert call_kwargs["response_format"]["schema"] == expected_schema
 
     @patch("ahc_agent.utils.llm.LLMClient.generate")  # Mocking the internal self.generate call
     @pytest.mark.asyncio()
@@ -348,7 +347,6 @@ class TestLLMClient:
                 # Also check that response_format was passed correctly
                 assert "response_format" in call_kwargs
                 assert call_kwargs["response_format"]["type"] == "json_object"
-                assert call_kwargs["response_format"]["schema"] == TestModel.model_json_schema()
 
     @pytest.mark.asyncio
     async def test_generate_with_logging_disabled(self):

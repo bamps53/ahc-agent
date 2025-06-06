@@ -292,7 +292,7 @@ class LLMClient:
 
         # Prepare parameters for litellm.acompletion, including response_format
         current_params = kwargs.copy()  # Avoid modifying the original kwargs
-        current_params["response_format"] = {"type": "json_object", "schema": json_schema}
+        current_params["response_format"] = {"type": "json_object"}
 
         # Resolve workspace directory for logging
         resolved_workspace_dir = current_params.get("workspace_dir", self._workspace_dir)
