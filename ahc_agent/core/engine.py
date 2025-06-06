@@ -431,33 +431,64 @@ class EvolutionaryEngine:
         """
         try:
             # Prepare prompt for mutation
-            eval_details = parent.get("evaluation_details")
+            eval_details = parent.get("evaluation_details") # This is {"per_test_case_results": [...]}
             error_message_for_llm = "No specific error details available from the last evaluation."
 
-            if isinstance(eval_details, dict):
-                # _evaluate_solution_wrapper থেকে আসা বিস্তারিত ত্রুটির তথ্য ফরম্যাট করা
+            if isinstance(eval_details, dict) and "per_test_case_results" in eval_details:
                 formatted_errors: List[str] = []
-                for test_case_name, test_details in eval_details.items():
-                    if isinstance(test_details, dict):
-                        tc_errors: List[str] = []
-                        if test_details.get("compilation_errors"):
-                            tc_errors.append(f"  Compilation Error: {test_details['compilation_errors']}")
-                        if test_details.get("execution_errors"):
-                            tc_errors.append(f"  Execution Error: {test_details['execution_errors']}")
-                        if test_details.get("score_calculation_error"):
-                            tc_errors.append(f"  Score Calculation Error: {test_details['score_calculation_error']}")
-                        if test_details.get("error") and not (test_details.get("compilation_errors") or test_details.get("execution_errors")): # Generic error
-                             tc_errors.append(f"  Error: {test_details['error']}")
+                # Check for global compilation error first, which might be in the first "test case"
+                # or as a top-level error in eval_details set by _evaluate_solution_wrapper
 
-                        if tc_errors:
-                            formatted_errors.append(f"Test Case '{test_case_name}':\n" + "\n".join(tc_errors))
+                # Handling top-level error set by _evaluate_solution_wrapper for compilation failure
+                if eval_details.get("error") == "Compilation failed":
+                    compile_errors = eval_details.get("compilation_stderr", "Unknown compilation error")
+                    formatted_errors.append(f"Global Compilation Error:\n  {compile_errors}")
+
+                # Iterate through per_test_case_results for other errors
+                for test_details in eval_details.get("per_test_case_results", []):
+                    test_case_name = test_details.get("test_case_name", "Unnamed Test")
+                    tc_errors: List[str] = []
+
+                    # If a global compilation error was already reported, skip individual compilation status here,
+                    # unless a specific test case (compilation_check) itself indicates the global failure.
+                    if test_case_name == "compilation_check" and not test_details.get("compilation_success", True):
+                        # This is already handled by the global check above if details["error"] was set.
+                        # If not, it means compilation failed but wasn't the first check, which is unusual.
+                        # We can add it if not already present in formatted_errors.
+                        compile_err_msg = test_details.get("compilation_stderr", "Unknown compilation error")
+                        if not any("Global Compilation Error" in fe for fe in formatted_errors):
+                             formatted_errors.append(f"Initial Compilation Check Error on '{test_case_name}':\n  {compile_err_msg}")
+                        continue # Skip further processing for this meta-entry
+
+                    # Check for execution errors
+                    if test_details.get("execution_success") is False and test_details.get("error_type"):
+                        err_type = test_details.get("error_type")
+                        # Avoid duplicating compilation error message if it's already globally captured
+                        if err_type == "compilation" and any("Global Compilation Error" in fe for fe in formatted_errors):
+                            pass # Already captured
+                        elif err_type == "compilation": # Individual (unexpected) compilation error
+                             err_msg = test_details.get("error_message", test_details.get("compilation_stderr", "Unknown compilation error"))
+                             tc_errors.append(f"  Compilation Error: {err_msg}")
+                        else: # runtime, timeout
+                            err_msg = test_details.get("error_message", test_details.get("execution_stderr", f"Unknown {err_type} error"))
+                            tc_errors.append(f"  {err_type.capitalize()} Error: {err_msg}")
+
+                    # Check for score calculation errors
+                    if test_details.get("score_calculation_error"):
+                        tc_errors.append(f"  Score Calculation Error: {test_details['score_calculation_error']}")
+
+                    if tc_errors:
+                        formatted_errors.append(f"Test Case '{test_case_name}':\n" + "\n".join(tc_errors))
 
                 if formatted_errors:
-                    error_message_for_llm = "Errors from previous evaluation:\n" + "\n\n".join(formatted_errors)
-                elif eval_details.get("error"): # Top-level error if no per-test-case errors
-                    error_message_for_llm = f"Error from previous evaluation: {eval_details['error']}"
-                elif not eval_details: # Empty dict
-                     error_message_for_llm = "Previous evaluation completed but no specific details were provided."
+                    error_message_for_llm = "Errors from previous evaluation:\n\n" + "\n\n".join(formatted_errors)
+                elif not eval_details.get("per_test_case_results"):
+                     error_message_for_llm = "Previous evaluation completed but no test case details were provided."
+                # If per_test_case_results exists but is empty or all successful, no specific error message is needed beyond the default
+
+            elif isinstance(eval_details, dict) and eval_details.get("error"): # Fallback for older format or general error
+               error_message_for_llm = f"Error from previous evaluation: {eval_details['error']}"
+
 
             prompt = f"""
             You are an expert C++ programmer solving an AtCoder Heuristic Contest problem.

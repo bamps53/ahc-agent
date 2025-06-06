@@ -1,19 +1,19 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple # Added Tuple
 
 import questionary
 from questionary import Choice
 
 from ahc_agent.config import Config
 from ahc_agent.core.analyzer import ProblemAnalyzer
-from ahc_agent.core.debugger import ImplementationDebugger
+# ImplementationDebugger removed as it's no longer directly used in _evaluate_solution_wrapper
 from ahc_agent.core.engine import EvolutionaryEngine
-from ahc_agent.core.problem_logic import ProblemLogic
+from ahc_agent.core.problem_logic import ProblemLogic # Already here, good for type hint
 from ahc_agent.core.strategist import SolutionStrategist
 from ahc_agent.core.workspace_store import WorkspaceStore
-from ahc_agent.utils.docker_manager import DockerManager
+from ahc_agent.utils.docker_manager import DockerManager # Already here, good for type hint
 from ahc_agent.utils.file_io import ensure_directory
 from ahc_agent.utils.llm import LLMClient
 
@@ -43,6 +43,7 @@ class SolveService:
         self.problem_analyzer = ProblemAnalyzer(self.llm_client, self.config.get("analyzer"))
         self.solution_strategist = SolutionStrategist(self.llm_client, self.config.get("strategist"))
         self.evolutionary_engine = EvolutionaryEngine(self.llm_client, self.config.get("evolution"))
+        # self.implementation_debugger is still a member of the class, just not used in _evaluate_solution_wrapper
         self.implementation_debugger = ImplementationDebugger(self.llm_client, self.docker_manager, self.config.get("debugger"))
         self.problem_logic = ProblemLogic(self.llm_client, self.config.get("problem_logic"))
 
@@ -210,7 +211,10 @@ class SolveService:
         self.evolutionary_engine.time_limit_seconds = time_limit_seconds
 
         async def eval_func_for_engine(code):
-            return await self._evaluate_solution_wrapper(code, test_cases, score_calculator, self.implementation_debugger)
+            # Using a placeholder for timeout_seconds as per instruction
+            # problem_logic.default_test_timeout (e.g., 5 seconds)
+            # TODO: Get this from config: self.config.get("problem_logic.default_test_timeout", 5)
+            return await self._evaluate_solution_wrapper(code, test_cases, score_calculator, timeout_seconds=5)
 
         logger.info(
             f"Starting evolutionary process with max_generations={max_generations}, "
@@ -251,71 +255,54 @@ class SolveService:
         self,
         code_to_evaluate: str,
         test_cases: list,
-        score_calculator_func,
-        implementation_debugger_instance: ImplementationDebugger,
-    ):
-        total_score = 0.0
-        all_details: Dict[str, Any] = {}
+        score_calculator_func: Any, # Callable[[str, str], Any]
+        timeout_seconds: int
+    ) -> Tuple[float, Dict[str, Any]]:
+        """
+        Wrapper to call problem_logic.evaluate_solution_code and format results.
+        """
+        if not self.docker_manager:
+            logger.error("DockerManager is not initialized in SolveService. Cannot evaluate solution.")
+            return float("-inf"), {"error": "DockerManager not available", "per_test_case_results": []}
 
-        if not test_cases:
-            logger.warning("No test cases provided for evaluation.")
-            return 0.0, {"warning": "No test cases provided"}
+        evaluation_result = await self.problem_logic.evaluate_solution_code(
+            cpp_code=code_to_evaluate,
+            test_cases=test_cases,
+            score_calculator_func=score_calculator_func,
+            docker_manager=self.docker_manager,
+            timeout_seconds=timeout_seconds
+        )
 
-        for i, test_case in enumerate(test_cases):
-            test_name = test_case.get("name", f"test_{i + 1}")
-            current_test_details: Dict[str, Any] = {}
+        overall_score = evaluation_result.get("overall_score", 0.0)
+        # Store the detailed per_test_case_results directly.
+        # Engine's _mutate method will need to parse this structure.
+        details = {"per_test_case_results": evaluation_result.get("per_test_case_results", [])}
 
-            if "input" not in test_case:
-                logger.error(f"Test case {test_name} is missing 'input' field.")
-                current_test_details = {"error": "Missing 'input' field", "score": 0.0}
-                all_details[test_name] = current_test_details
-                continue
+        # Check for compilation failure from the first test case result (as per evaluate_solution_code logic)
+        # The evaluate_solution_code already handles setting a 0 score if compilation fails for the first test case,
+        # but here we want to signal a more catastrophic failure to the evolutionary engine.
+        per_test_results = details["per_test_case_results"]
+        if per_test_results: # Ensure list is not empty
+            first_case_result = per_test_results[0]
+            if first_case_result.get("test_case_name") == "compilation_check" and \
+               first_case_result.get("compilation_success") is False:
+                overall_score = float("-inf") # Signal catastrophic failure for compilation error
+                details["error"] = "Compilation failed" # Top-level error for quick check
+                details["compilation_stderr"] = first_case_result.get("compilation_stderr", "")
+            # Also, if overall_score is already very low due to multiple failures, ensure it's -inf
+            # This might not be strictly necessary if evaluate_solution_code handles it, but good for emphasis.
+            elif overall_score == 0.0 and any(not r.get("compilation_success", True) for r in per_test_results):
+                 # If any case had a compile error (though evaluate_solution_code aims for one check)
+                 # This scenario is less likely with the current evaluate_solution_code logic
+                 # but provides a fallback.
+                 comp_failed_result = next((r for r in per_test_results if not r.get("compilation_success", True)), None)
+                 if comp_failed_result:
+                    overall_score = float("-inf")
+                    details["error"] = "Compilation failed during one of the test cases"
+                    details["compilation_stderr"] = comp_failed_result.get("compilation_stderr", "")
 
-            result = await implementation_debugger_instance.compile_and_test(
-                code_to_evaluate, test_case["input"]
-            )
 
-            current_test_details["compilation_success"] = result.get("compilation_success", False)
-            current_test_details["compilation_errors"] = result.get("compilation_errors")
-            current_test_details["execution_success"] = result.get("execution_success", False)
-            current_test_details["execution_output"] = result.get("execution_output")
-            current_test_details["execution_errors"] = result.get("execution_errors")
-            current_test_details["execution_time"] = result.get("execution_time")
-
-            if result.get("execution_success", False): # Check execution_success specifically
-                current_score_val = 0.0
-                score_calc_error_msg = None
-                try:
-                    # score_calculator_func returns a tuple (score, error_message_or_none)
-                    if asyncio.iscoroutinefunction(score_calculator_func):
-                        current_score_tuple = await score_calculator_func(
-                            test_case["input"], result["execution_output"]
-                        )
-                    else:
-                        current_score_tuple = score_calculator_func(
-                            test_case["input"], result["execution_output"]
-                        )
-
-                    current_score_val, score_calc_error_msg = current_score_tuple
-                    current_score_val = float(current_score_val)
-
-                except Exception as e:
-                    logger.error(f"Error calling score_calculator_func for {test_name}: {e!s}")
-                    current_score_val = 0.0
-                    score_calc_error_msg = f"Error calling score_calculator_func: {e!s}"
-
-                total_score += current_score_val
-                current_test_details["score"] = current_score_val
-                if score_calc_error_msg:
-                    current_test_details["score_calculation_error"] = score_calc_error_msg
-            else:
-                current_test_details["score"] = 0.0
-                current_test_details["error"] = result.get("compilation_errors") or result.get("execution_errors") or "Evaluation failed before scoring"
-
-            all_details[test_name] = current_test_details
-
-        avg_score = total_score / len(test_cases) if test_cases else 0.0
-        return avg_score, all_details
+        return overall_score, details
 
     async def run_solve(
         self,
@@ -379,7 +366,10 @@ class SolveService:
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
         async def eval_func_for_engine(code):
-            return await self._evaluate_solution_wrapper(code, current_test_cases, current_score_calculator, self.implementation_debugger)
+            # Using a placeholder for timeout_seconds as per instruction
+            # problem_logic.default_test_timeout (e.g., 5 seconds)
+            # TODO: Get this from config: self.config.get("problem_logic.default_test_timeout", 5)
+            return await self._evaluate_solution_wrapper(code, current_test_cases, current_score_calculator, timeout_seconds=5)
 
         result = await self.evolutionary_engine.evolve(
             problem_analysis_data,

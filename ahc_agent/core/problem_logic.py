@@ -6,9 +6,13 @@ This module provides functionality for handling AtCoder Heuristic Contest proble
 
 import json
 import logging
+import asyncio
+import os
 import random
+import tempfile
 from typing import Any, Callable, Dict, List, Optional
 
+from ahc_agent.core.docker_manager import DockerManager
 from ahc_agent.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -262,3 +266,204 @@ int main() {
             if score1 is not None and score2 is not None:
                 return solution1_code if score1 >= score2 else solution2_code
             return random.choice([solution1_code, solution2_code])  # noqa: S311
+
+    async def execute_cpp_code(
+        self,
+        cpp_code: str,
+        input_data: str,
+        docker_manager: DockerManager,
+        timeout_seconds: int,
+    ) -> Dict[str, Any]:
+        """
+        Compiles and runs C++ code using Docker, then returns execution results.
+        """
+        result: Dict[str, Any] = {
+            "compilation_success": False,
+            "compilation_stdout": "",
+            "compilation_stderr": "",
+            "executable_path": None,
+            "execution_success": False,
+            "execution_stdout": "",
+            "execution_stderr": "",
+            "execution_time": 0.0,
+            "error_type": None,  # "compilation", "timeout", "runtime"
+            "error_message": "",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_file_path = os.path.join(temp_dir, "main.cpp")
+            executable_name = "a.out"  # Standard name for compiled output
+            executable_path_in_container = f"/app/{executable_name}" # Assuming Docker context
+
+            try:
+                with open(source_file_path, "w", encoding="utf-8") as f:
+                    f.write(cpp_code)
+
+                # --- Compilation Step ---
+                compilation_result = await docker_manager.compile_cpp(
+                    source_file_path=source_file_path,
+                    output_name=executable_name, # This will be placed in temp_dir
+                    container_workdir="/app" # compile_cpp should handle placing it in temp_dir/output_name
+                )
+
+                result["compilation_stdout"] = compilation_result.get("stdout", "")
+                result["compilation_stderr"] = compilation_result.get("stderr", "")
+
+                if compilation_result.get("success"):
+                    result["compilation_success"] = True
+                    # The actual path to the executable on the host for potential inspection,
+                    # though it's run inside the container.
+                    result["executable_path"] = os.path.join(temp_dir, executable_name)
+
+                    # --- Execution Step (only if compilation succeeded) ---
+                    execution_result = await docker_manager.run_cpp(
+                        executable_path=executable_name, # Name of the executable within the container's workdir
+                        input_data=input_data,
+                        timeout_seconds=timeout_seconds,
+                        container_workdir=temp_dir # Mount temp_dir to /app in container
+                    )
+
+                    result["execution_stdout"] = execution_result.get("stdout", "")
+                    result["execution_stderr"] = execution_result.get("stderr", "")
+                    result["execution_time"] = execution_result.get("execution_time", 0.0)
+
+                    if execution_result.get("status") == "success":
+                        result["execution_success"] = True
+                    elif execution_result.get("status") == "timeout":
+                        result["execution_success"] = False
+                        result["error_type"] = "timeout"
+                        result["error_message"] = "Execution timed out."
+                    else: # runtime error or other
+                        result["execution_success"] = False
+                        result["error_type"] = "runtime"
+                        result["error_message"] = execution_result.get("stderr", "Runtime error occurred.")
+                else:
+                    result["compilation_success"] = False
+                    result["error_type"] = "compilation"
+                    result["error_message"] = compilation_result.get("stderr", "Compilation failed.")
+                    # Execution is skipped if compilation fails
+
+            except Exception as e:
+                logger.error(f"Error during C++ code execution: {type(e).__name__} - {e!s}")
+                result["error_type"] = "system" # Or a more specific type if identifiable
+                result["error_message"] = f"An unexpected error occurred: {str(e)}"
+                # Ensure execution_success remains False if an error occurs before execution
+                if result["error_type"] == "system" and not result["compilation_success"]:
+                     result["execution_success"] = False # Should already be false
+
+            finally:
+                # TemporaryDirectory is cleaned up automatically upon exiting the 'with' block.
+                pass
+
+        return result
+
+    async def evaluate_solution_code(
+        self,
+        cpp_code: str,
+        test_cases: List[Dict[str, str]],
+        score_calculator_func: Callable[[str, str], Any],
+        docker_manager: DockerManager,
+        timeout_seconds: int,
+    ) -> Dict[str, Any]:
+        """
+        Evaluates C++ code against multiple test cases and calculates an overall score.
+        """
+        total_score: float = 0.0
+        per_test_case_results: List[Dict[str, Any]] = []
+
+        # As per current execute_cpp_code, compilation happens on each call.
+        # A dedicated "compile_once" step isn't strictly necessary with the current design
+        # of execute_cpp_code, as it recompiles each time.
+        # However, we can do a preliminary check with the first test case or a dummy one
+        # to catch compilation errors early, though it will recompile again.
+        # For simplicity and adherence to "call execute_cpp_code for each test case" implied
+        # by its current structure, we'll proceed without a separate pre-compilation check here.
+        # If test_cases is empty, this loop won't run, and score will be 0.
+
+        if not test_cases:
+            return {"overall_score": 0.0, "per_test_case_results": []}
+
+        for i, test_case_spec in enumerate(test_cases):
+            test_case_name = test_case_spec.get("name", f"test_{i+1}")
+            input_data = test_case_spec["input"] # Assuming "input" key is always present
+
+            current_test_result: Dict[str, Any] = {
+                "test_case_name": test_case_name,
+                "score": 0.0, # Default score
+                "score_calculation_error": None,
+            }
+
+            # Execute the code for the current test case
+            # This will compile and run the code.
+            exec_result = await self.execute_cpp_code(
+                cpp_code=cpp_code,
+                input_data=input_data,
+                docker_manager=docker_manager,
+                timeout_seconds=timeout_seconds,
+            )
+
+            # Merge execution results into current_test_result
+            current_test_result.update(exec_result)
+
+            if exec_result.get("compilation_success") is False:
+                # If any test case fails compilation (e.g. if execute_cpp_code changes to allow this per call)
+                # or if we decide to make a single upfront compilation check that fails.
+                # For now, if compilation fails for one, it likely failed for all (since it's the same code).
+                # We can stop early or collect all compilation failures.
+                # The prompt implies one initial compilation check. Let's adjust for that.
+                #
+                # Re-thinking: The prompt wants one initial compilation.
+                # If execute_cpp_code recompiles each time, this is tricky.
+                # Let's simulate the "initial compilation" by checking the first execution's compile status.
+                # If this first one fails compilation, we assume it's a general code issue.
+                if i == 0 and not exec_result.get("compilation_success"):
+                    # This is the first attempt, and compilation failed.
+                    # Populate a single result indicating compilation failure for the whole batch.
+                    per_test_case_results.append({
+                        "test_case_name": "compilation_check",
+                        "compilation_success": False,
+                        "compilation_stdout": exec_result.get("compilation_stdout"),
+                        "compilation_stderr": exec_result.get("compilation_stderr"),
+                        "execution_success": False,
+                        "score": 0.0,
+                        "error_type": "compilation",
+                        "error_message": exec_result.get("error_message", "Compilation failed"),
+                    })
+                    return {"overall_score": 0.0, "per_test_case_results": per_test_case_results}
+
+            # If compilation for this specific call failed (e.g., if execute_cpp_code could have variable success)
+            if not exec_result.get("compilation_success"):
+                current_test_result["score"] = 0.0
+                # error_type and error_message are already set by execute_cpp_code
+                per_test_case_results.append(current_test_result)
+                continue # Move to the next test case, this one cannot be scored.
+
+            if exec_result.get("execution_success"):
+                try:
+                    if asyncio.iscoroutinefunction(score_calculator_func):
+                        score_val = await score_calculator_func(input_data, exec_result.get("execution_stdout", ""))
+                    else:
+                        score_val = score_calculator_func(input_data, exec_result.get("execution_stdout", ""))
+
+                    if isinstance(score_val, tuple) and len(score_val) == 2:
+                        current_test_result["score"] = float(score_val[0])
+                        if score_val[1]: # Error message present
+                            current_test_result["score_calculation_error"] = str(score_val[1])
+                    else:
+                        current_test_result["score"] = float(score_val)
+
+                except Exception as e:
+                    logger.error(f"Error during score calculation for {test_case_name}: {type(e).__name__} - {e!s}")
+                    current_test_result["score"] = 0.0
+                    current_test_result["score_calculation_error"] = f"Exception in score_calculator_func: {str(e)}"
+
+                total_score += current_test_result["score"]
+            else:
+                # Execution failed (timeout or runtime error)
+                current_test_result["score"] = 0.0
+                # error_type and error_message are already set by execute_cpp_code
+
+            per_test_case_results.append(current_test_result)
+
+        overall_score = total_score / len(test_cases) if test_cases else 0.0
+        return {"overall_score": overall_score, "per_test_case_results": per_test_case_results}
