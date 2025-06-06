@@ -144,7 +144,7 @@ class SolveService:
 
         initial_code = await self.problem_logic.generate_initial_solution(problem_analysis_data)
         if initial_code:
-            self.workspace_store.save_solution("initial", {"code": initial_code, "score": 0, "generation": 0})
+            self.workspace_store.save_solution("initial", {"code": initial_code, "score": 0, "generation": 0, "details": None}) # Add details: None
             logger.info("Initial solution generated and saved to Knowledge Base.")
             return initial_code
 
@@ -186,10 +186,11 @@ class SolveService:
                 initial_code = self.workspace_store.load_solution_code("initial")
                 initial_sol_from_kb_dict = None
                 if initial_code:
-                    metadata = self.workspace_store.load_solution_metadata("initial")
+                    metadata = self.workspace_store.load_solution_metadata("initial") # metadata may contain 'details'
                     initial_sol_from_kb_dict = {"code": initial_code}
-                    if metadata:
+                    if metadata: # Ensure metadata is not None before updating
                         initial_sol_from_kb_dict.update(metadata)
+
 
                 if initial_sol_from_kb_dict and initial_sol_from_kb_dict.get("code"):
                     initial_code_for_evolution = initial_sol_from_kb_dict["code"]
@@ -200,7 +201,8 @@ class SolveService:
                     if not initial_code_for_evolution:
                         logger.error("Failed to generate an initial solution for evolution.")
                         return None
-                    self.workspace_store.save_solution("initial_for_evolve", {"code": initial_code_for_evolution, "score": 0, "generation": 0})
+                    # Add details:None for consistency
+                    self.workspace_store.save_solution("initial_for_evolve", {"code": initial_code_for_evolution, "score": 0, "generation": 0, "details": None})
                     logger.info("New initial solution generated and saved for evolution.")
 
         self.evolutionary_engine.max_generations = max_generations
@@ -230,7 +232,12 @@ class SolveService:
         self.workspace_store.save_evolution_log(result["evolution_log"])
         self.workspace_store.save_solution(
             "best",
-            {"code": result["best_solution"], "score": result["best_score"], "generation": result["generations_completed"]},
+            {
+                "code": result["best_solution_code"],
+                "score": result["best_score"],
+                "generation": result["generations_completed"],
+                "details": result.get("best_solution_details") # Use .get for safety
+            },
         )
 
         logger.info(f"Evolution complete: {result['generations_completed']} generations completed.")
@@ -247,37 +254,68 @@ class SolveService:
         score_calculator_func,
         implementation_debugger_instance: ImplementationDebugger,
     ):
-        total_score = 0
-        details = {}
+        total_score = 0.0
+        all_details: Dict[str, Any] = {}
 
         if not test_cases:
             logger.warning("No test cases provided for evaluation.")
-            return 0, {"warning": "No test cases provided"}
+            return 0.0, {"warning": "No test cases provided"}
 
         for i, test_case in enumerate(test_cases):
+            test_name = test_case.get("name", f"test_{i + 1}")
+            current_test_details: Dict[str, Any] = {}
+
             if "input" not in test_case:
-                logger.error(f"Test case {i} is missing 'input' field.")
-                details[test_case.get("name", f"test_{i + 1}")] = {"error": "Missing 'input' field", "score": 0}
+                logger.error(f"Test case {test_name} is missing 'input' field.")
+                current_test_details = {"error": "Missing 'input' field", "score": 0.0}
+                all_details[test_name] = current_test_details
                 continue
 
-            result = await implementation_debugger_instance.compile_and_test(code_to_evaluate, test_case["input"])
-            test_name = test_case.get("name", f"test_{i + 1}")
+            result = await implementation_debugger_instance.compile_and_test(
+                code_to_evaluate, test_case["input"]
+            )
 
-            if result["success"]:
-                if asyncio.iscoroutinefunction(score_calculator_func):
-                    current_score = await score_calculator_func(test_case["input"], result["execution_output"])
-                else:
-                    current_score = score_calculator_func(test_case["input"], result["execution_output"])
-                total_score += current_score
-                details[test_name] = {"score": current_score, "execution_time": result["execution_time"]}
+            current_test_details["compilation_success"] = result.get("compilation_success", False)
+            current_test_details["compilation_errors"] = result.get("compilation_errors")
+            current_test_details["execution_success"] = result.get("execution_success", False)
+            current_test_details["execution_output"] = result.get("execution_output")
+            current_test_details["execution_errors"] = result.get("execution_errors")
+            current_test_details["execution_time"] = result.get("execution_time")
+
+            if result.get("execution_success", False): # Check execution_success specifically
+                current_score_val = 0.0
+                score_calc_error_msg = None
+                try:
+                    # score_calculator_func returns a tuple (score, error_message_or_none)
+                    if asyncio.iscoroutinefunction(score_calculator_func):
+                        current_score_tuple = await score_calculator_func(
+                            test_case["input"], result["execution_output"]
+                        )
+                    else:
+                        current_score_tuple = score_calculator_func(
+                            test_case["input"], result["execution_output"]
+                        )
+
+                    current_score_val, score_calc_error_msg = current_score_tuple
+                    current_score_val = float(current_score_val)
+
+                except Exception as e:
+                    logger.error(f"Error calling score_calculator_func for {test_name}: {e!s}")
+                    current_score_val = 0.0
+                    score_calc_error_msg = f"Error calling score_calculator_func: {e!s}"
+
+                total_score += current_score_val
+                current_test_details["score"] = current_score_val
+                if score_calc_error_msg:
+                    current_test_details["score_calculation_error"] = score_calc_error_msg
             else:
-                details[test_name] = {
-                    "error": result["compilation_errors"] or result["execution_errors"],
-                    "score": 0,
-                }
+                current_test_details["score"] = 0.0
+                current_test_details["error"] = result.get("compilation_errors") or result.get("execution_errors") or "Evaluation failed before scoring"
 
-        avg_score = total_score / len(test_cases) if test_cases else 0
-        return avg_score, details
+            all_details[test_name] = current_test_details
+
+        avg_score = total_score / len(test_cases) if test_cases else 0.0
+        return avg_score, all_details
 
     async def run_solve(
         self,
@@ -354,7 +392,12 @@ class SolveService:
         self.workspace_store.save_evolution_log(result["evolution_log"])
         self.workspace_store.save_solution(
             "best",
-            {"code": result["best_solution"], "score": result["best_score"], "generation": result["generations_completed"]},
+            {
+                "code": result["best_solution_code"],
+                "score": result["best_score"],
+                "generation": result["generations_completed"],
+                "details": result.get("best_solution_details") # Use .get for safety
+            },
         )
 
         logger.info(f"Evolution complete: {result['generations_completed']} generations completed.")
@@ -569,11 +612,11 @@ class SolveService:
 
                 if evolution_result:
                     # Update current_initial_code to the best from this evolution run for subsequent evolves
-                    current_initial_code = evolution_result["best_solution"]
+                    current_initial_code = evolution_result["best_solution_code"] # Use best_solution_code
                     show_best = await questionary.confirm("Show best solution from this evolution run?", default=False).ask_async()
                     if show_best:
                         print("\n=== Best Solution (Current Evolution Run) ===")
-                        print(evolution_result["best_solution"])
+                        print(evolution_result["best_solution_code"]) # Use best_solution_code
                 else:
                     logger.error("Evolution step failed.")
             else:

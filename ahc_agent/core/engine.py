@@ -432,22 +432,35 @@ class EvolutionaryEngine:
         try:
             # Prepare prompt for mutation
             eval_details = parent.get("evaluation_details")
-            error_message = ""
+            error_message_for_llm = "No specific error details available from the last evaluation."
+
             if isinstance(eval_details, dict):
-                # Check if this looks like a compilation failure result from DockerManager
-                # "original_stderr" implies it came from compile_cpp
-                if eval_details.get("success") is False and "original_stderr" in eval_details:
-                    error_message = f"Compilation failed. Error messages:\n{eval_details.get('stderr', 'No stderr provided.')}"
-                else:
-                    error_message = str(eval_details)  # Keep current behavior for other types of evaluation details
-            elif eval_details is not None:
-                error_message = str(eval_details)
-            else:
-                error_message = "No evaluation details provided."
+                # _evaluate_solution_wrapper থেকে আসা বিস্তারিত ত্রুটির তথ্য ফরম্যাট করা
+                formatted_errors: List[str] = []
+                for test_case_name, test_details in eval_details.items():
+                    if isinstance(test_details, dict):
+                        tc_errors: List[str] = []
+                        if test_details.get("compilation_errors"):
+                            tc_errors.append(f"  Compilation Error: {test_details['compilation_errors']}")
+                        if test_details.get("execution_errors"):
+                            tc_errors.append(f"  Execution Error: {test_details['execution_errors']}")
+                        if test_details.get("score_calculation_error"):
+                            tc_errors.append(f"  Score Calculation Error: {test_details['score_calculation_error']}")
+                        if test_details.get("error") and not (test_details.get("compilation_errors") or test_details.get("execution_errors")): # Generic error
+                             tc_errors.append(f"  Error: {test_details['error']}")
+
+                        if tc_errors:
+                            formatted_errors.append(f"Test Case '{test_case_name}':\n" + "\n".join(tc_errors))
+
+                if formatted_errors:
+                    error_message_for_llm = "Errors from previous evaluation:\n" + "\n\n".join(formatted_errors)
+                elif eval_details.get("error"): # Top-level error if no per-test-case errors
+                    error_message_for_llm = f"Error from previous evaluation: {eval_details['error']}"
+                elif not eval_details: # Empty dict
+                     error_message_for_llm = "Previous evaluation completed but no specific details were provided."
 
             prompt = f"""
             You are an expert C++ programmer solving an AtCoder Heuristic Contest problem.
-
             You need to mutate the following solution to create a new variant:
 
             ```cpp
@@ -455,34 +468,27 @@ class EvolutionaryEngine:
             ```
 
             Problem Title: {problem_analysis.get("title", "Unknown")}
+            Scoring Rules: {problem_analysis.get("scoring_rules", {})}
+            Current Solution Score: {parent.get("score", "N/A")}
 
-            Scoring Rules:
-            {problem_analysis.get("scoring_rules", {})}
-
-            Current Solution Score: {parent["score"]}
-
-            Evaluation Details:
-            {error_message}
+            Evaluation Details from the failed attempt (if any):
+            {error_message_for_llm}
 
             Please mutate the solution to improve it. Consider:
-            1. Fixing any bugs or issues
-            2. Optimizing the algorithm
-            3. Adjusting parameters
-            4. Trying different heuristics
-            5. Introducing randomness in a controlled way
+            1. Fixing any bugs or issues identified in the evaluation details.
+            2. Optimizing the algorithm.
+            3. Adjusting parameters.
+            4. Trying different heuristics.
+            5. Introducing randomness in a controlled way.
 
             Make meaningful changes that could improve the solution, but don't completely rewrite it.
-
+            If there were compilation errors, prioritize fixing them.
+            If there were runtime errors, try to understand the cause based on the error message and input context (though input is not directly provided here).
             Return only the mutated C++ code without any explanations.
             ```cpp
             // Your mutated solution here
             ```
-            """
-
-            if "Compilation failed. Error messages:" in error_message:  # Check if we formatted it as a compilation error
-                logger.info(f"Attempting mutation for a solution that failed compilation. LLM Prompt:\n{prompt}")
-
-            # Generate mutated solution
+"""
             response = await self.llm_client.generate(prompt)
 
             # Extract code from response
