@@ -6,14 +6,16 @@ This module provides utilities for communicating with LLM APIs using LiteLLM.
 
 import asyncio
 import datetime
-import json
+import json  # Keep json for _save_llm_log and for dumping schema in prompt
 import logging
 import os
 from pathlib import Path
-import re
-from typing import Any, Dict, Optional
+
+# import re # re is confirmed to be no longer needed
+from typing import Any, Dict, Optional, Type  # Added Type
 
 import litellm
+from pydantic import BaseModel, ValidationError  # Added BaseModel and ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -265,66 +267,89 @@ class LLMClient:
 
         return response_text
 
-    async def generate_json(self, prompt: str, **kwargs) -> Dict[str, Any]:
+    async def generate_json(self, prompt: str, pydantic_model: Type[BaseModel], **kwargs) -> BaseModel:
         """
-        Generate JSON using the LLM.
+        Generate JSON using the LLM and parse it into a Pydantic model.
 
         Args:
-            prompt: Prompt text
-            **kwargs: Additional parameters to pass to the LLM
+            prompt: Prompt text.
+            pydantic_model: The Pydantic model to validate and parse the response into.
+            **kwargs: Additional parameters to pass to the LLM.
+                      Includes 'workspace_dir' for logging location.
 
         Returns:
-            Generated JSON as dictionary
+            An instance of the provided Pydantic model.
+
+        Raises:
+            ValueError: If the LLM response is not valid JSON or does not match the Pydantic model schema.
         """
-        # Add JSON instruction to prompt
-        json_prompt = f"{prompt}\n\nRespond with valid JSON only, no other text."
+        # Get the JSON schema from the Pydantic model
+        json_schema = pydantic_model.model_json_schema()
 
-        # Generate text
-        text = await self.generate(json_prompt, **kwargs)
+        # Add JSON instruction to prompt, including the schema
+        # Using json.dumps to ensure the schema is correctly formatted as a string within the prompt
+        json_prompt = f"{prompt}\n\nRespond with valid JSON that conforms to the following schema:\n{json.dumps(json_schema)}"
 
-        # Get workspace directory from kwargs
-        # workspace_dir = kwargs.get("workspace_dir") # log_dir is not used in this method
-        # log_dir = self._ensure_log_directory(workspace_dir) # log_dir is not used in this method
+        # Prepare parameters for litellm.acompletion, including response_format
+        current_params = kwargs.copy()  # Avoid modifying the original kwargs
+        current_params["response_format"] = {"type": "json_object", "schema": json_schema}
 
-        result = None
-        # error_msg = None # error_msg is not used in this method
+        # Resolve workspace directory for logging
+        resolved_workspace_dir = current_params.get("workspace_dir", self._workspace_dir)
+        log_dir = self._ensure_log_directory(resolved_workspace_dir)
+
+        raw_llm_response_content = None
+        error_for_log = None
 
         try:
-            # Extract JSON from text
-            # First, try to find JSON block
-            json_match = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
-            json_text_content = json_match.group(1).strip() if json_match else text.strip()
-            return json.loads(json_text_content)
+            # Call self.generate, passing the modified prompt and response_format.
+            # self.generate will handle the actual call to litellm.acompletion,
+            # retries, and basic logging of the LLM interaction.
+            raw_llm_response_content = await self.generate(json_prompt, **current_params)
 
-        except json.JSONDecodeError as e:
-            # error_msg = str(e) # error_msg is not used
-            logger.error(f"Error parsing JSON: {e!s}")
-            logger.error(f"Raw text: {text}")
+            # Validate and parse the JSON response using the Pydantic model
+            response_model_instance = pydantic_model.model_validate_json(raw_llm_response_content)
+            logger.debug(f"Successfully validated and parsed JSON response into {pydantic_model.__name__}")
+            return response_model_instance
 
-            # Try to fix common JSON errors
-            try:
-                # Replace single quotes with double quotes
-                fixed_text = text.replace("'", '"')
-
-                # Add missing quotes around keys
-                fixed_text = re.sub(r"(\s*)(\w+)(\s*):(\s*)", r'\1"\2"\3:\4', fixed_text)
-
-                # Parse fixed JSON
-                result = json.loads(fixed_text)
-                logger.info("Successfully fixed and parsed JSON")
-                return result
-
-            except json.JSONDecodeError as fix_err:
-                # error_msg = f"Failed to fix JSON: {fix_err}" # error_msg is not used
-                logger.error(f"Failed to fix JSON after attempting common corrections: {fix_err!s}")
-                # Raise the original error 'e' to provide context of the first failure
-                raise ValueError(f"LLM did not return valid JSON: {e!s}") from e
-
-        except (TypeError, AttributeError, IndexError, ValueError) as e:
-            # error_msg = str(e) # error_msg is not used in this method
-            logger.error(f"Error processing JSON response: {e!s}")
+        except ValidationError as e:
+            error_for_log = f"Pydantic validation error: {e}"
+            logger.error(error_for_log)
+            logger.error(f"Raw LLM response: {raw_llm_response_content}")
+            # Re-raise as ValueError for consistent error handling by the caller
+            raise ValueError(
+                f"LLM response failed Pydantic validation for {pydantic_model.__name__}: {e!s}. Raw response: {raw_llm_response_content}"
+            ) from e
+        except Exception as e:  # Catch other potential errors (e.g., from self.generate)
+            error_for_log = str(e)
+            logger.error(f"Error in generate_json for {pydantic_model.__name__}: {e!s}")
+            if raw_llm_response_content:  # Log raw response if available
+                logger.error(f"Raw LLM response (if available): {raw_llm_response_content}")
+            # Re-raise the exception. If it's a ValueError from self.generate(), it's already informative.
+            # Otherwise, wrap it to indicate failure in this specific method.
+            if not isinstance(e, ValueError):
+                raise ValueError(f"Failed to generate or parse JSON for {pydantic_model.__name__}: {e!s}") from e
+            # Is already a ValueError, likely from self.generate() or the ValidationError above
             raise
         finally:
-            # The LLM call is logged by self.generate().
-            # Additional logging for JSON parsing status, if needed, should be handled differently.
-            pass
+            # Log the attempt if an error occurred and we have a log_dir.
+            # self.generate already logs its own execution. This log is specifically for generate_json's context,
+            # especially if validation fails after a successful generation.
+            if error_for_log and log_dir:
+                # Filter params for logging to avoid duplication or overly large objects
+                params_for_log = {
+                    k: v
+                    for k, v in current_params.items()
+                    if k not in ["messages", "api_key", "schema"]  # schema can be large
+                }
+                # Ensure response_format is logged as a string if it's an object
+                if "response_format" in params_for_log and isinstance(params_for_log["response_format"], dict):
+                    params_for_log["response_format"] = json.dumps(params_for_log["response_format"])
+
+                self._save_llm_log(
+                    log_dir=log_dir,
+                    prompt=json_prompt,
+                    response=raw_llm_response_content,  # Log the raw response from LLM
+                    params=params_for_log,
+                    error=error_for_log,
+                )
