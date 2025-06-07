@@ -1,14 +1,28 @@
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+# Ensure the project root is in sys.path first
+import os
+import sys
 
-import pytest
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from ahc_agent.config import Config
-from ahc_agent.core.debugger import ImplementationDebugger
-from ahc_agent.core.workspace_store import WorkspaceStore
-from ahc_agent.services.solve_service import SolveService
-from ahc_agent.utils.docker_manager import DockerManager
-from ahc_agent.utils.llm import LLMClient
+import asyncio  # noqa: E402
+from pathlib import Path  # noqa: E402
+import time  # noqa: E402 # time should be imported before pathlib based on ruff format
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
+
+import pytest  # noqa: E402
+
+from ahc_agent.config import Config  # noqa: E402
+from ahc_agent.core.analyzer import ProblemAnalyzer  # noqa: E402
+from ahc_agent.core.debugger import ImplementationDebugger  # noqa: E402
+from ahc_agent.core.engine import EvolutionaryEngine  # noqa: E402
+from ahc_agent.core.problem_logic import ProblemLogic  # noqa: E402
+from ahc_agent.core.strategist import SolutionStrategist  # noqa: E402
+from ahc_agent.core.workspace_store import WorkspaceStore  # noqa: E402
+from ahc_agent.services.solve_service import SolveService  # noqa: E402
+from ahc_agent.utils.docker_manager import DockerManager  # noqa: E402
+from ahc_agent.utils.llm import LLMClient  # noqa: E402
 
 
 @pytest.fixture
@@ -71,6 +85,49 @@ def mock_workspace_store(mocker):
     ws.get_workspace_dir.return_value = mock_workspace_root_path
 
     return ws
+
+
+@pytest.fixture
+def solve_service(
+    mock_llm_client: LLMClient,  # Existing fixture
+    mock_docker_manager: DockerManager,  # Existing fixture
+    mock_config: Config,  # Existing fixture
+    mock_workspace_store: WorkspaceStore,  # Existing fixture
+    mocker,  # Pytest-mock fixture for creating further mocks if needed
+) -> SolveService:
+    """
+    Provides a SolveService instance with mocked dependencies for testing.
+    This instance also has its core logic components (analyzer, strategist, etc.)
+    patched to be AsyncMocks by default, suitable for testing SolveService's orchestration logic.
+    """
+    # Patch the core logic components that SolveService instantiates.
+    # This ensures that when SolveService.__init__ is called, it uses these mocks.
+    mocker.patch(
+        "ahc_agent.services.solve_service.ProblemAnalyzer", return_value=mocker.AsyncMock(spec=ProblemAnalyzer)
+    )  # Use the imported ProblemAnalyzer
+    mocker.patch(
+        "ahc_agent.services.solve_service.SolutionStrategist", return_value=mocker.AsyncMock(spec=SolutionStrategist)
+    )  # Use the imported SolutionStrategist
+    mocker.patch("ahc_agent.services.solve_service.ProblemLogic", return_value=mocker.AsyncMock(spec=ProblemLogic))  # Use the imported ProblemLogic
+    mocker.patch(
+        "ahc_agent.services.solve_service.EvolutionaryEngine", return_value=mocker.AsyncMock(spec=EvolutionaryEngine)
+    )  # Use the imported EvolutionaryEngine
+    mocker.patch(
+        "ahc_agent.services.solve_service.ImplementationDebugger", return_value=mocker.AsyncMock(spec=ImplementationDebugger)
+    )  # Use the imported ImplementationDebugger
+
+    return SolveService(
+        llm_client=mock_llm_client,
+        docker_manager=mock_docker_manager,
+        config=mock_config,
+        workspace_store=mock_workspace_store,
+    )
+
+
+@pytest.fixture
+def mock_problem_analysis_data() -> dict:
+    """Provides a sample problem analysis data dictionary."""
+    return {"title": "Test Problem", "constraints": "None", "input_format": "stdin", "output_format": "stdout"}
 
 
 # Patch all core modules used by SolveService
@@ -676,8 +733,21 @@ async def test_run_testcases_step_load_from_tools_empty_dir_generates(
     mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker
 ):
     # Arrange
-    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, patch("pathlib.Path") as MockPathClass:
-        mock_tools_in_path_instance = MockPathClass.return_value
+    with patch("ahc_agent.services.solve_service.ProblemLogic") as MockProblemLogicGlobal, patch(
+        "ahc_agent.services.solve_service.Path"
+    ) as MockPathClass:
+        # This mock_path_base is what Path(config.get("workspace.base_dir")) would return
+        mock_path_base = MockPathClass.return_value
+
+        # We need to mock the chained calls: Path(...) / "tools" / "in"
+        mock_path_tools = mocker.MagicMock(spec=Path)
+        mock_path_tools_in = mocker.MagicMock(spec=Path)
+
+        mock_path_base.__truediv__.side_effect = lambda segment: mock_path_tools if segment == "tools" else mocker.MagicMock(spec=Path)
+        mock_path_tools.__truediv__.side_effect = lambda segment: mock_path_tools_in if segment == "in" else mocker.MagicMock(spec=Path)
+
+        # mock_tools_in_path_instance is the final result of Path(...) / "tools" / "in"
+        mock_tools_in_path_instance = mock_path_tools_in
         mock_tools_in_path_instance.exists.return_value = True
         mock_tools_in_path_instance.is_dir.return_value = True
         mock_tools_in_path_instance.glob.return_value = []  # Empty directory
@@ -1086,3 +1156,59 @@ async def test_run_initial_solution_step_generation_fails(mock_llm_client, mock_
         mock_pl_instance_global.generate_initial_solution.assert_called_once_with(sample_analysis_data)
         mock_workspace_store.save_solution.assert_not_called()
         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_run_solve_parallell_execution(solve_service: SolveService, mock_problem_analysis_data: dict):
+    """
+    run_solveメソッド内のLLM呼び出しが並列実行されることを確認する。
+    具体的には、problem_logicのgenerate_initial_solution, generate_test_cases, create_score_calculator
+    が並列に呼び出されることを確認する。
+    """
+    solve_service.workspace_store.load_problem_analysis = MagicMock(return_value=mock_problem_analysis_data)
+    solve_service.workspace_store.load_solution_strategy = MagicMock(return_value={})
+    solve_service.workspace_store.get_best_solution = MagicMock(return_value=None)
+
+    # 各メソッドの呼び出し時間を記録するための AsyncMock を設定
+    # 処理に時間がかかるように sleep を挟む
+    async def mock_generate_initial_solution(*args, **kwargs):
+        await asyncio.sleep(0.2)
+        return "initial_solution"
+
+    async def mock_generate_test_cases(*args, **kwargs):
+        await asyncio.sleep(0.2)
+        return [{"name": "test1", "input": "input1"}]
+
+    async def mock_create_score_calculator(*args, **kwargs):
+        await asyncio.sleep(0.2)
+        return lambda x, y: 0.0
+
+    solve_service.problem_logic.generate_initial_solution = AsyncMock(side_effect=mock_generate_initial_solution)
+    solve_service.problem_logic.generate_test_cases = AsyncMock(side_effect=mock_generate_test_cases)
+    solve_service.problem_logic.create_score_calculator = AsyncMock(side_effect=mock_create_score_calculator)
+    solve_service.evolutionary_engine.evolve = AsyncMock(
+        return_value={
+            "best_solution": "best_solution_code",
+            "best_score": 100,
+            "evolution_log": [],
+            "generations_completed": 1,
+        }
+    )
+
+    start_time = time.time()
+    await solve_service.run_solve(problem_text="dummy_problem_text", interactive=False)
+    end_time = time.time()
+
+    execution_time = end_time - start_time
+
+    # 各メソッドが呼び出されたことを確認
+    solve_service.problem_logic.generate_initial_solution.assert_called_once()
+    solve_service.problem_logic.generate_test_cases.assert_called_once()
+    solve_service.problem_logic.create_score_calculator.assert_called_once()
+
+    # 並列実行されていれば、全体の実行時間は各メソッドのsleep時間の合計よりも短く、
+    # かつ最も長いsleep時間よりも長くなるはず
+    # ここでは、0.2秒 * 3 = 0.6秒よりも短く、0.2秒よりも長いことを期待する
+    # 実際にはオーバーヘッドがあるため、0.4秒以下であれば並列とみなす
+    assert execution_time < 0.4, f"Execution time was {execution_time}, expected less than 0.4 for parallel execution."
+    assert execution_time > 0.18, f"Execution time was {execution_time}, expected more than 0.18 (single longest task time)."

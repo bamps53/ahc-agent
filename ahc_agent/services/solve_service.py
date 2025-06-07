@@ -317,24 +317,59 @@ class SolveService:
             self.workspace_store.save_solution_strategy(solution_strategy)
 
         best_solution_from_kb = self.workspace_store.get_best_solution()
-        initial_solution_code = (
-            best_solution_from_kb.get("code") if best_solution_from_kb else await self.problem_logic.generate_initial_solution(problem_analysis_data)
-        )
+
+        # Prepare tasks for concurrent execution
+        # We use a dictionary to easily map results back if needed, though gather returns a list.
+        tasks_to_run_map = {}
+
+        if best_solution_from_kb and best_solution_from_kb.get("code"):
+            # If already loaded from KB, create a pre-completed task-like future
+            initial_solution_code_future = asyncio.Future()
+            initial_solution_code_future.set_result(best_solution_from_kb.get("code"))
+            tasks_to_run_map["initial_solution"] = initial_solution_code_future
+            logger.info("Using best solution from KB as initial solution.")
+        else:
+            tasks_to_run_map["initial_solution"] = self.problem_logic.generate_initial_solution(problem_analysis_data)
+            logger.info("Generating initial solution...")
 
         tools_in_dir = Path(self.config.get("workspace.base_dir")) / "tools" / "in"
-        current_test_cases = []
+        loaded_test_cases_from_tools = []
         if tools_in_dir.exists() and tools_in_dir.is_dir():
             for test_file in sorted(tools_in_dir.glob("*.txt")):
                 with open(test_file) as f:
-                    current_test_cases.append({"name": test_file.name, "input": f.read()})
+                    loaded_test_cases_from_tools.append({"name": test_file.name, "input": f.read()})
 
-        if not current_test_cases:
-            logger.info("No test cases found in tools/in/. Generating fallback test cases...")
-            current_test_cases = await self.problem_logic.generate_test_cases(problem_analysis_data, 3)
+        if loaded_test_cases_from_tools:
+            logger.info(f"Loaded {len(loaded_test_cases_from_tools)} test cases from tools/in/")
+            test_cases_future = asyncio.Future()
+            test_cases_future.set_result(loaded_test_cases_from_tools)
+            tasks_to_run_map["test_cases"] = test_cases_future
         else:
-            logger.info(f"Loaded {len(current_test_cases)} test cases from tools/in/")
+            logger.info("No test cases found in tools/in/. Generating fallback test cases...")
+            tasks_to_run_map["test_cases"] = self.problem_logic.generate_test_cases(problem_analysis_data, 3)
 
-        current_score_calculator = await self.problem_logic.create_score_calculator(problem_analysis_data)
+        tasks_to_run_map["score_calculator"] = self.problem_logic.create_score_calculator(problem_analysis_data)
+        logger.info("Creating score calculator...")
+
+        # Run tasks concurrently
+        # The order of results in 'gathered_results' will match the order of tasks in 'tasks_to_run_map.values()'
+        task_keys = list(tasks_to_run_map.keys())
+        gathered_results = await asyncio.gather(*tasks_to_run_map.values())
+
+        # Assign results based on the order of keys
+        results_map = dict(zip(task_keys, gathered_results))
+
+        initial_solution_code = results_map["initial_solution"]
+        current_test_cases = results_map["test_cases"]
+        current_score_calculator = results_map["score_calculator"]
+
+        if not initial_solution_code:
+            logger.warning("Failed to obtain an initial solution code.")
+            # Potentially handle this error, e.g., by returning or raising an exception
+        if not current_test_cases:
+            logger.warning("Failed to obtain test cases.")
+        if not current_score_calculator:
+            logger.warning("Failed to create a score calculator.")
 
         logger.info("Running evolutionary process...")
         workspace_dir = self.workspace_store.get_workspace_dir()
