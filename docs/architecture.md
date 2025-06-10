@@ -134,7 +134,7 @@ ahc-agent [OPTIONS] COMMAND [ARGS]...
     -   ホストの作業ディレクトリがコンテナの `/workspace` (デフォルト) にマウントされます。
 2.  **C++コードのコンパイルと実行**:
     -   `compile_cpp`: 指定された C++ソースファイルをコンテナ内でコンパイルします。コンパイラやフラグは設定に基づきます (`docker.cpp_compiler`, `docker.cpp_flags`)。
-    -   `run_cpp` (現在は `run_executable` という名前で `ImplementationDebugger` 内で使用): コンパイルされた実行可能ファイルをコンテナ内で実行し、標準入出力を扱います。実行時間制限も適用されます。
+    -   `run_cpp` (現在は `run_executable` という名前で `ImplementationDebugger` 内で使用): コンパイルされた実行可能ファイルをコンテナ内で実行し、標準入出力を扱います。実行時間制限も適用されます。`ImplementationDebugger` は、この機能を `compile_solution` と `run_test_case` に分割し、コードを一度だけコンパイルしてから多数のテストケースで効率的に評価する「compile-once, run-many」モデルを実装しています。
 
 ### Dockerfile テンプレートの想定
 

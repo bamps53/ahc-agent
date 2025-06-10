@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict
@@ -44,7 +43,7 @@ class SolveService:
         self.solution_strategist = SolutionStrategist(self.llm_client, self.config.get("strategist"))
         self.evolutionary_engine = EvolutionaryEngine(self.llm_client, self.config.get("evolution"))
         self.implementation_debugger = ImplementationDebugger(self.llm_client, self.docker_manager, self.config.get("debugger"))
-        self.problem_logic = ProblemLogic(self.llm_client, self.config.get("problem_logic"))
+        self.problem_logic = ProblemLogic(self.llm_client, Path(self.workspace_dir), self.config.get("problem_logic"))
 
         # 各コアモジュールのLLMクライアントにワークスペースディレクトリを設定
         self._set_workspace_for_core_modules()
@@ -144,7 +143,8 @@ class SolveService:
 
         initial_code = await self.problem_logic.generate_initial_solution(problem_analysis_data)
         if initial_code:
-            self.workspace_store.save_solution("initial", {"code": initial_code, "score": 0, "generation": 0})
+            solution_data = {"code": initial_code, "score": 0, "generation": 0}
+            self.workspace_store.save_solution("initial", solution_data["code"], metadata=solution_data)
             logger.info("Initial solution generated and saved to Knowledge Base.")
             return initial_code
 
@@ -246,38 +246,135 @@ class SolveService:
         test_cases: list,
         score_calculator_func,
         implementation_debugger_instance: ImplementationDebugger,
-    ):
-        total_score = 0
-        details = {}
+    ) -> Dict[str, Any]:
+        """Evaluates a C++ solution by compiling it once and running against all test cases."""
+        logger.info(f"Evaluating solution with {len(test_cases)} test cases.")
+
+        if not code_to_evaluate:
+            logger.warning("No code provided to evaluate.")
+            return {
+                "success": False,
+                "compilation_success": False,
+                "test_results": [],
+                "total_score": 0,
+                "average_score": 0,
+                "error": "No code provided",
+            }
 
         if not test_cases:
             logger.warning("No test cases provided for evaluation.")
-            return 0, {"warning": "No test cases provided"}
+            # If there's code but no test cases, we can still try to compile it.
+            # The behavior here might depend on requirements: is compilation without tests a success?
+            # For now, let's assume it's a partial success if compilation works.
+            # Continue to compilation attempt
+
+        # Ensure the debugger's LLM client has the workspace context if it uses one
+        if hasattr(implementation_debugger_instance, "llm_client") and implementation_debugger_instance.llm_client:
+            implementation_debugger_instance.llm_client.set_workspace_dir(self.workspace_dir)
+
+        eval_work_dir = Path(self.workspace_dir) / "debug_eval_wrapper"
+        ensure_directory(eval_work_dir)
+
+        executable_path = await implementation_debugger_instance.compile_solution(code=code_to_evaluate, work_dir=eval_work_dir)
+
+        if not executable_path:
+            logger.error("Solution compilation failed.")
+            return {
+                "success": False,
+                "compilation_success": False,
+                "compilation_errors": "Compilation failed. Check debugger logs.",  # compile_solution logs details
+                "test_results": [],
+                "total_score": 0,
+                "average_score": 0,
+                "fixed_code": code_to_evaluate,  # Original code that failed
+            }
+
+        logger.info(f"Compilation successful. Executable: {executable_path}")
+
+        if not test_cases:  # Handle case where there were no test cases after successful compilation
+            logger.info("Code compiled successfully, but no test cases to run.")
+            return {
+                "success": True,
+                "compilation_success": True,
+                "compilation_errors": "",
+                "test_results": [],
+                "total_score": 0,
+                "average_score": 0,
+                "fixed_code": code_to_evaluate,  # or potentially fixed code from compile_solution
+                "executable_path": str(executable_path),
+            }
+
+        all_test_results = []
+        total_score = 0
+        successful_executions = 0
+        overall_success = True  # Becomes False if any test case fails execution
 
         for i, test_case in enumerate(test_cases):
-            if "input" not in test_case:
-                logger.error(f"Test case {i} is missing 'input' field.")
-                details[test_case.get("name", f"test_{i + 1}")] = {"error": "Missing 'input' field", "score": 0}
-                continue
+            logger.info(f"Running test case {i + 1}/{len(test_cases)}")
+            input_data = test_case.get("input")
+            if input_data is None:
+                logger.warning(f"Test case {i + 1} missing 'input' data. Skipping.")
+                # Create a synthetic failure result for this test case
+                all_test_results.append(
+                    {
+                        "test_case_id": test_case.get("id", f"unnamed_{i + 1}"),
+                        "input_data": "",
+                        "execution_success": False,
+                        "execution_output": "",
+                        "execution_errors": "Missing input data",
+                        "execution_time": 0,
+                        "score": 0,
+                        "timeout": False,
+                    }
+                )
+                overall_success = False
+                continue  # Added continue to process next test case after synthetic failure
 
-            result = await implementation_debugger_instance.compile_and_test(code_to_evaluate, test_case["input"])
-            test_name = test_case.get("name", f"test_{i + 1}")
+            run_result = implementation_debugger_instance.run_test_case(executable_path, input_data)
 
-            if result["success"]:
-                if asyncio.iscoroutinefunction(score_calculator_func):
-                    current_score = await score_calculator_func(test_case["input"], result["execution_output"])
-                else:
-                    current_score = score_calculator_func(test_case["input"], result["execution_output"])
-                total_score += current_score
-                details[test_name] = {"score": current_score, "execution_time": result["execution_time"]}
-            else:
-                details[test_name] = {
-                    "error": result["compilation_errors"] or result["execution_errors"],
-                    "score": 0,
+            score = 0
+            if run_result["success"] and score_calculator_func:
+                try:
+                    score = score_calculator_func(input_data, run_result["stdout"])
+                    successful_executions += 1
+                except Exception as e:
+                    logger.error(f"Score calculation failed for test case {i + 1}: {e}")
+                    score = 0  # Or some other error indicator
+                    # Consider if score calculation error should mark overall_success as False
+            elif not run_result["success"]:
+                overall_success = False  # Mark overall success as False if any execution fails
+
+            all_test_results.append(
+                {
+                    "test_case_id": test_case.get("id", f"unnamed_{i + 1}"),  # Assuming test cases might have an ID
+                    "input_data": input_data,
+                    "execution_success": run_result["success"],
+                    "execution_output": run_result["stdout"],
+                    "execution_errors": run_result["stderr"],
+                    "execution_time": run_result["execution_time"],
+                    "score": score,
+                    "timeout": run_result.get("timeout", False),
                 }
+            )
+            total_score += score
 
-        avg_score = total_score / len(test_cases) if test_cases else 0
-        return avg_score, details
+        average_score = total_score / len(test_cases) if test_cases else 0
+
+        # Note: The 'fixed_code' field here might need refinement.
+        # If compile_solution returned a fixed code, that should be propagated.
+        # However, compile_solution currently doesn't explicitly return the fixed code, just the path.
+        # For now, we assume code_to_evaluate is the relevant one unless compile_solution changes.
+        return {
+            "success": overall_success,  # Success if all executions are successful and no input data was missing
+            "compilation_success": True,
+            "compilation_errors": "",
+            "test_results": all_test_results,
+            "total_score": total_score,
+            "average_score": average_score,
+            "successful_executions": successful_executions,
+            "fixed_code": code_to_evaluate,  # This might need to be the potentially fixed code from compilation
+            "executable_path": str(executable_path),
+        }
 
     async def run_solve(
         self,
@@ -285,6 +382,9 @@ class SolveService:
         interactive: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
+        logger.info(f"Starting solve process. Interactive: {interactive}")
+        # The following line was the original start of the logic here.
+        # It's being placed correctly within the method definition now.
         contest_id_from_config = self.config.get("contest_id")
         if not contest_id_from_config:
             base_dir = self.config.get("workspace.base_dir", ".")

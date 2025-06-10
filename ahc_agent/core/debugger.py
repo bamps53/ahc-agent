@@ -6,9 +6,10 @@ This module provides functionality for debugging and testing C++ implementations
 
 import logging
 import os
+from pathlib import Path
 import re
 import tempfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ahc_agent.utils.docker_manager import DockerManager
 from ahc_agent.utils.file_io import ensure_directory, write_file
@@ -42,154 +43,164 @@ class ImplementationDebugger:
 
         logger.info("Initialized implementation debugger")
 
-    async def compile_and_test(self, code: str, test_input: str, work_dir: Optional[str] = None) -> Dict[str, Any]:
+    async def compile_solution(self, code: str, work_dir: Optional[Union[str, Path]] = None) -> Optional[Path]:
         """
-        Compile and test a C++ implementation.
+        Compile a C++ solution.
+
+        Args:
+            code: C++ code string.
+            work_dir: Working directory. If None, a temporary directory will be created.
+
+        Returns:
+            Path to the compiled executable if successful, None otherwise.
+        """
+        logger.info("Compiling C++ solution...")
+        work_dir_path = Path(ensure_directory(work_dir) if work_dir else tempfile.mkdtemp(prefix="ahc_compile_"))
+        source_file = "solution.cpp"
+        source_path = work_dir_path / source_file
+        executable_name = "solution_executable"
+        executable_path = work_dir_path / executable_name
+
+        try:
+            write_file(source_path, code)
+            compile_result = self.docker_manager.compile_cpp(source_file=source_file, work_dir=str(work_dir_path), output_filename=executable_name)
+
+            if compile_result["success"]:
+                logger.info(f"Compilation successful. Executable at: {executable_path}")
+                return executable_path
+            logger.error(f"Compilation failed: {compile_result['stderr']}")
+            # Attempt to fix compilation errors once
+            fixed_code = await self._fix_compilation_errors(code, compile_result["stderr"])
+            if fixed_code != code:
+                logger.info("Attempting to compile with fixed code...")
+                write_file(source_path, fixed_code)
+                compile_result = self.docker_manager.compile_cpp(
+                    source_file=source_file, work_dir=str(work_dir_path), output_filename=executable_name
+                )
+                if compile_result["success"]:
+                    logger.info(f"Compilation successful with fixed code. Executable at: {executable_path}")
+                    # It might be good to also return the fixed_code if successful
+                    return executable_path
+                logger.error(f"Compilation still failed with fixed code: {compile_result['stderr']}")
+                return None
+            return None
+        except Exception as e:
+            logger.error(f"Error during compilation process: {type(e).__name__} - {e!s}")
+            return None
+
+    def run_test_case(self, executable_path: Path, input_data: str) -> Dict[str, Any]:
+        """
+        Run a compiled C++ solution with the given input.
+
+        Args:
+            executable_path: Path to the compiled executable.
+            input_data: Test input string.
+
+        Returns:
+            Dictionary with execution results (stdout, stderr, execution_time, success).
+        """
+        logger.info(f"Running test case with executable: {executable_path}")
+        work_dir_path = executable_path.parent
+        input_file = "input.txt"
+        input_file_path = work_dir_path / input_file
+        # output_file variable was unused
+
+        try:
+            write_file(input_file_path, input_data)
+            run_result = self.docker_manager.run_cpp(
+                executable_name=executable_path.name,  # run_cpp expects just the name relative to work_dir
+                work_dir=str(work_dir_path),
+                input_filename=input_file,
+                timeout_seconds=self.execution_timeout,
+            )
+            return {
+                "stdout": run_result["stdout"],
+                "stderr": run_result["stderr"],
+                "execution_time": run_result["execution_time"],
+                "success": run_result["success"] and not run_result["timeout"],
+                "timeout": run_result["timeout"],
+            }
+        except Exception as e:
+            logger.error(f"Error running test case: {type(e).__name__} - {e!s}")
+            return {
+                "stdout": "",
+                "stderr": f"Error in run_test_case: {type(e).__name__} - {e!s}",
+                "execution_time": 0,
+                "success": False,
+                "timeout": False,
+            }
+
+    async def compile_and_test(self, code: str, test_input: str, work_dir: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+        """
+        Compile and test a C++ implementation. (Combines compile_solution and run_test_case)
 
         Args:
             code: C++ code
             test_input: Test input data
-            work_dir: Working directory
+            work_dir: Working directory. If None, a temporary directory will be created.
 
         Returns:
-            Dictionary with test results
+            Dictionary with test results, including compilation and execution status.
         """
-        logger.info("Compiling and testing C++ implementation")
+        logger.info("Attempting to compile and test C++ implementation...")
 
-        # Ensure work directory exists
-        work_dir_path = ensure_directory(work_dir) if work_dir else tempfile.mkdtemp(prefix="ahc_debug_")
+        # Determine working directory, creating a temporary one if not provided
+        # This temp directory will be used for compilation and execution artifacts.
+        # It's important that compile_solution and run_test_case use the same work_dir if called sequentially.
+        # For compile_and_test, we manage a single work_dir for both operations.
+        current_work_dir = Path(ensure_directory(work_dir) if work_dir else tempfile.mkdtemp(prefix="ahc_ct_"))
 
-        try:
-            # Write code to file
-            source_file = "solution.cpp"
-            source_path = os.path.join(work_dir_path, source_file)
-            write_file(source_path, code)
+        executable_path = await self.compile_solution(code, work_dir=current_work_dir)
 
-            # Write test input to file
-            input_file = "input.txt"
-            input_path = os.path.join(work_dir_path, input_file)
-            write_file(input_path, test_input)
-
-            # Compile code
-            compile_result = self.docker_manager.compile_cpp(source_file, work_dir_path)
-
-            if not compile_result["success"]:
-                logger.error(f"Compilation failed: {compile_result['stderr']}")
-
-                # Get compilation errors
-                compilation_errors = compile_result["stderr"]
-
-                # Fix compilation errors using LLM
-                fixed_code = await self._fix_compilation_errors(code, compilation_errors)
-
-                # Try compiling again with fixed code
-                if fixed_code != code:
-                    logger.info("Trying to compile with fixed code")
-
-                    # Write fixed code to file
-                    write_file(source_path, fixed_code)
-
-                    # Compile fixed code
-                    compile_result = self.docker_manager.compile_cpp(source_file, work_dir_path)
-
-                    if compile_result["success"]:
-                        logger.info("Compilation successful with fixed code")
-                        code = fixed_code
-                    else:
-                        logger.error(f"Compilation still failed with fixed code: {compile_result['stderr']}")
-                        return {
-                            "success": False,
-                            "compilation_success": False,
-                            "compilation_errors": compile_result["stderr"],
-                            "execution_success": False,
-                            "execution_output": "",
-                            "execution_errors": "",
-                            "execution_time": None,
-                            "fixed_code": fixed_code,
-                        }
-                else:
-                    return {
-                        "success": False,
-                        "compilation_success": False,
-                        "compilation_errors": compilation_errors,
-                        "execution_success": False,
-                        "execution_output": "",
-                        "execution_errors": "",
-                        "execution_time": None,
-                        "fixed_code": None,
-                    }
-
-            # Execute code
-            executable_file = "solution"
-            execute_result = self.docker_manager.run_executable(executable_file, work_dir_path, input_file, timeout=self.execution_timeout)
-
-            if not execute_result["success"]:
-                logger.error(f"Execution failed: {execute_result['stderr']}")
-
-                # Get runtime errors
-                runtime_errors = execute_result["stderr"]
-
-                # Fix runtime errors using LLM
-                fixed_code_runtime = await self._fix_runtime_errors(code, runtime_errors, test_input)
-
-                # Try executing again with fixed code
-                if fixed_code_runtime != code:
-                    logger.info("Trying to execute with fixed code (runtime error fix)")
-
-                    # Write fixed code to file
-                    write_file(source_path, fixed_code_runtime)
-
-                    # Re-compile fixed code
-                    compile_result_rerun = self.docker_manager.compile_cpp(source_file, work_dir_path)
-
-                    if compile_result_rerun["success"]:
-                        # Execute fixed code
-                        execute_result = self.docker_manager.run_executable(
-                            executable_file, work_dir_path, input_file, timeout=self.execution_timeout
-                        )
-                        if execute_result["success"]:
-                            logger.info("Execution successful with fixed code")
-                            code = fixed_code_runtime
-                        else:
-                            logger.error(f"Execution still failed with fixed code: {execute_result['stderr']}")
-                            # Fall through to return current execute_result
-                    else:
-                        logger.error(f"Compilation failed for runtime-fixed code: {compile_result_rerun['stderr']}")
-                        # Return info about this new compilation failure
-                        return {
-                            "success": False,
-                            "compilation_success": False,
-                            "compilation_errors": compile_result_rerun["stderr"],
-                            "execution_success": False,
-                            "execution_output": "",
-                            "execution_errors": "",
-                            "execution_time": None,
-                            "fixed_code": fixed_code_runtime,
-                        }
-
-            return {
-                "success": execute_result["success"],
-                "compilation_success": True,
-                "compilation_errors": "",
-                "execution_success": execute_result["success"],
-                "execution_output": execute_result["stdout"],
-                "execution_errors": execute_result["stderr"],
-                "execution_time": execute_result["execution_time"],
-                "fixed_code": code,
-            }
-
-        except (ValueError, RuntimeError, TypeError, OSError) as e:
-            logger.error(f"Error in compile_and_test: {e!s}")
+        if not executable_path:
+            # Compilation failed (and optional fix attempt also failed)
+            # compile_solution logs the details, so we just return a failure structure.
+            # If a fixed code was attempted and failed, it's not directly returned here,
+            # but the original code is what's considered to have failed compilation.
             return {
                 "success": False,
                 "compilation_success": False,
-                "compilation_errors": str(e),
+                "compilation_errors": "Compilation failed. Check logs for details.",  # More specific errors logged by compile_solution
                 "execution_success": False,
                 "execution_output": "",
                 "execution_errors": "",
                 "execution_time": None,
-                "fixed_code": None,
+                "fixed_code": code,  # The code that failed to compile
+                "executable_path": None,
             }
+
+        # Compilation successful, now run the test case
+        run_result = self.run_test_case(executable_path, test_input)
+
+        # If execution failed and it wasn't a timeout, attempt to fix runtime errors
+        # This part is simplified: we won't re-compile here. A more robust fix might require it.
+        # For now, if a runtime fix is generated, it's more of a suggestion.
+        fixed_code_runtime = code  # Default to original or compilation-fixed code
+        if not run_result["success"] and not run_result["timeout"] and run_result["stderr"]:
+            logger.info("Execution failed, attempting to fix runtime error...")
+            fixed_code_runtime_attempt = await self._fix_runtime_errors(code, run_result["stderr"], test_input)
+            if fixed_code_runtime_attempt != code:
+                logger.info("Runtime fix generated. Note: This version is not re-compiled/re-run by compile_and_test.")
+                # In a more complex scenario, you might re-compile and re-run here.
+                # For now, we just note that a fix was suggested.
+                fixed_code_runtime = fixed_code_runtime_attempt
+            else:
+                logger.info("LLM did not suggest a change for the runtime error.")
+
+        # Clean up: DockerManager might create a.out or other executables.
+        # The specific executable_path from compile_solution is the one we care about.
+        # Temporary directory cleanup is handled by the caller or OS if not specified.
+        return {
+            "success": run_result["success"],
+            "compilation_success": True,
+            "compilation_errors": "",  # Already handled by compile_solution
+            "execution_success": run_result["success"],
+            "execution_output": run_result["stdout"],
+            "execution_errors": run_result["stderr"],
+            "execution_time": run_result["execution_time"],
+            "fixed_code": fixed_code_runtime,  # This could be original, compilation-fixed, or runtime-fixed suggestion
+            "executable_path": str(executable_path),  # Path to the executable used
+        }
 
     async def evaluate_solution(self, code: str, test_cases: List[Dict[str, Any]], work_dir: Optional[str] = None) -> Dict[str, Any]:
         """

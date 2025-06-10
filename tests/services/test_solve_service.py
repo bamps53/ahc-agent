@@ -360,64 +360,71 @@ async def test_run_solve_tools_in_handling(
 
 
 @pytest.mark.asyncio
-async def test_evaluate_solution_wrapper(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store):  # Need other mocks for ID
+async def test_evaluate_solution_wrapper(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store):
     # Arrange
-    mock_id_instance = AsyncMock(spec=ImplementationDebugger)  # _evaluate_solution_wrapper uses an ID instance
+    mock_id_instance = AsyncMock(spec=ImplementationDebugger)
 
     service = SolveService(llm_client=mock_llm_client, docker_manager=mock_docker_manager, config=mock_config, workspace_store=mock_workspace_store)
-
-    # Override the service's debugger instance with our specific mock for this test
-    # This is needed because _evaluate_solution_wrapper is called internally by the evolve callback,
-    # but here we test it directly, so we need to provide the debugger it would expect.
-    # The service initializes self.implementation_debugger in its __init__.
-    # We can pass our mock_id_instance when creating SolveService, or patch it.
-    # For direct test of wrapper, let's pass it if service allowed, or use the one from service.
-    # The service instantiates its own ID. So, we need to patch the service's ID.
-    service.implementation_debugger = mock_id_instance  # Replace the service's debugger
+    service.implementation_debugger = mock_id_instance
 
     test_code = "some_code"
     test_cases = [
-        {"name": "tc1", "input": "in1"},
-        {"name": "tc2", "input": "in2"},
-        {"name": "tc3", "no_input_field": True},  # inputフィールドがない無効なテストケース
+        {"id": "tc1", "input": "in1"},
+        {"id": "tc2", "input": "in2"},
+        {"id": "tc3", "no_input_field": True},  # Invalid test case with no 'input'
     ]
-    mock_score_calculator = MagicMock()
+    mock_score_calculator = MagicMock(return_value=100.0)
+    mock_executable_path = Path("/tmp/test_executable")
 
-    # Mock results from implementation_debugger.compile_and_test
-    # 3つのテストケース全てに対応する値を設定
-    mock_id_instance.compile_and_test.side_effect = [
-        {"success": True, "execution_output": "out1", "execution_time": 0.1},  # tc1
-        {"success": False, "compilation_errors": "compile_err", "execution_errors": None, "execution_time": 0},  # tc2
-        # tc3は'input'フィールドがないため、実際には呼び出されないはずですが、
-        # コードが変更された場合に備えて値を設定しておきます
-        {"success": False, "compilation_errors": "tc3_error", "execution_errors": None, "execution_time": 0},  # tc3
+    # Mock the new methods of ImplementationDebugger
+    mock_id_instance.compile_solution.return_value = mock_executable_path
+
+    mock_id_instance.run_test_case.side_effect = [
+        # Result for tc1 (success)
+        {"success": True, "stdout": "out1", "stderr": "", "execution_time": 0.1, "timeout": False},
+        # Result for tc2 (failure)
+        {"success": False, "stdout": "", "stderr": "runtime_error", "execution_time": 0.2, "timeout": False},
     ]
-
-    # Mock score_calculator behavior
-    # 十分な数の戻り値を用意する
-    mock_score_calculator.return_value = 100.0  # side_effectの代わりにreturn_valueを使用
 
     # Act
-    avg_score, details = await service._evaluate_solution_wrapper(
-        test_code,
-        test_cases,
-        mock_score_calculator,
-        mock_id_instance,  # Pass the mock ID
+    result = await service._evaluate_solution_wrapper(
+        code_to_evaluate=test_code,
+        test_cases=test_cases,
+        score_calculator_func=mock_score_calculator,
+        implementation_debugger_instance=mock_id_instance,
     )
 
     # Assert
-    assert mock_id_instance.compile_and_test.call_count == 2  # Called for tc1, tc2. Not for tc3.
-    mock_id_instance.compile_and_test.assert_any_call(test_code, "in1")
-    mock_id_instance.compile_and_test.assert_any_call(test_code, "in2")
+    mock_id_instance.compile_solution.assert_awaited_once_with(code=test_code, work_dir=Path(service.workspace_dir) / "debug_eval_wrapper")
 
-    mock_score_calculator.assert_called_once_with("in1", "out1")  # Only for successful tc1
+    assert mock_id_instance.run_test_case.call_count == 2
+    mock_id_instance.run_test_case.assert_any_call(mock_executable_path, "in1")
+    mock_id_instance.run_test_case.assert_any_call(mock_executable_path, "in2")
 
-    assert avg_score == 100.0 / 3  # Total score / num_test_cases (including invalid one)
-    assert details["tc1"]["score"] == 100.0
-    assert details["tc2"]["score"] == 0
-    assert "compile_err" in details["tc2"]["error"]
-    assert details["tc3"]["score"] == 0  # Due to missing 'input'
-    assert "Missing 'input' field" in details["tc3"]["error"]
+    mock_score_calculator.assert_called_once_with("in1", "out1")
+
+    assert not result["success"]
+    assert result["compilation_success"]
+    assert result["total_score"] == 100.0
+    assert result["average_score"] == 100.0 / 3
+    assert len(result["test_results"]) == 3
+
+    res1 = result["test_results"][0]
+    assert res1["test_case_id"] == "tc1"
+    assert res1["execution_success"]
+    assert res1["score"] == 100.0
+
+    res2 = result["test_results"][1]
+    assert res2["test_case_id"] == "tc2"
+    assert not res2["execution_success"]
+    assert res2["score"] == 0
+    assert "runtime_error" in res2["execution_errors"]
+
+    res3 = result["test_results"][2]
+    assert res3["test_case_id"] == "tc3"
+    assert not res3["execution_success"]
+    assert res3["score"] == 0
+    assert "Missing input data" in res3["execution_errors"]
 
 
 @patch("ahc_agent.services.solve_service.ProblemLogic")
@@ -802,7 +809,9 @@ async def test_run_initial_solution_step_success(mock_llm_client, mock_docker_ma
         # Assert
         mock_workspace_store.load_problem_analysis.assert_called_once()
         mock_pl_instance_global.generate_initial_solution.assert_called_once_with(sample_analysis_data)
-        mock_workspace_store.save_solution.assert_called_once_with("initial", {"code": expected_code, "score": 0, "generation": 0})
+        mock_workspace_store.save_solution.assert_called_once_with(
+            "initial", expected_code, metadata={"code": expected_code, "score": 0, "generation": 0}
+        )
         assert result == expected_code
 
 
