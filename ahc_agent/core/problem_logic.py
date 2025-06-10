@@ -5,13 +5,14 @@ This module provides functionality for handling
 AtCoder Heuristic Contest problem-specific logic.
 """
 
-import importlib.util
 import json
 import logging
 from pathlib import Path
 import random
 from typing import Any, Callable, Dict, List, Optional
 
+# scorer の create_score_calculator をインポート
+from ahc_agent.core.scorer import create_score_calculator as create_scorer_calculator
 from ahc_agent.utils.llm import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -137,91 +138,29 @@ class ProblemLogic:
             logger.error(f"Error generating test case data: {type(e).__name__} - {e!s}")
             return None
 
-    async def create_score_calculator(self, problem_info: Dict[str, Any]) -> Callable[[str, str], float]:
+    async def create_score_calculator(self, problem_info: Dict[str, Any]) -> Callable[[Any, Any], float]:
         """
         Create a score calculator function for a problem.
+        This method now uses the scorer.py module.
         """
-        scoring_rules = problem_info.get("scoring", {})
-        score_formula = scoring_rules.get("formula", "")
-        problem_statement = problem_info.get("problem_statement", "")
-        input_format = problem_info.get("input_format", {})
-        output_format = problem_info.get("output_format", {})
-        constraints = problem_info.get("constraints", {})
-
-        prompt = (
-            f"Create a Python function `calculate_score(input_data_str, output_data_str)` "
-            f"that calculates the score for an AtCoder Heuristic Contest problem.\n\n"
-            f"Problem statement:\n{problem_statement}\n\n"
-            f"Input format:\n{json.dumps(input_format, indent=2)}\n\n"
-            f"Output format:\n{json.dumps(output_format, indent=2)}\n\n"
-            f"Constraints:\n{json.dumps(constraints, indent=2)}\n\n"
-            f"Scoring logic:\n{score_formula}\n\n"
-            f"Instructions:\n"
-            f"1. The function must take two string parameters: input_data_str and output_data_str\n"
-            f"2. Parse both strings according to the input/output formats\n"
-            f"3. Calculate and return the score as a float\n"
-            f"4. Handle any validation of the output format and constraints\n"
-            f"5. Return 0.0 for invalid outputs\n\n"
-            f"Return your code wrapped in a ```python``` code block.\n"
-        )
-        score_calculator_file_path = self.workspace_dir / "score_calculator.py"
+        # problem_info は現時点では scorer.py で使用しないが、将来的な拡張性を考慮して引数として残す
+        logger.info(f"Creating score calculator using scorer.py for problem: {problem_info.get('title', 'N/A')}")
         try:
-            calculator_code = await self.llm_client.generate(prompt)
+            # scorer.py の create_score_calculator を呼び出す
+            calculator_func = create_scorer_calculator()
 
-            # 必ず```python```コードブロックがあることを前提に処理
-            # パターン1: ```python\n..コード..\n```
-            if "```python" in calculator_code and "```" in calculator_code.split("```python", 1)[1]:
-                # ```pythonの後のコードを抽出
-                code_part = calculator_code.split("```python", 1)[1]
-                # コードの後の```を削除
-                calculator_code = code_part.split("```", 1)[0].strip()
-            # パターン2: ```\n..コード..\n```
-            elif "```" in calculator_code and "```" in calculator_code.split("```", 2)[2]:
-                # 最初の```の後のコードを抽出
-                code_part = calculator_code.split("```", 2)[1]
-                calculator_code = code_part.strip()
-            # 先頭の空行やインデントを削除
-            calculator_code = calculator_code.strip()
-
-            # Ensure the directory exists
-            score_calculator_file_path.parent.mkdir(parents=True, exist_ok=True)
-            score_calculator_file_path.write_text(calculator_code)
-
-            spec = importlib.util.spec_from_file_location("score_calculator_module", score_calculator_file_path)
-            if spec is None or spec.loader is None:
-                logger.error(f"Could not load spec for {score_calculator_file_path}")
-                return lambda _input_data, _output_data: 0.0
-
-            score_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(score_module)
-
-            if hasattr(score_module, "calculate_score") and callable(score_module.calculate_score):
-                calculator_func = score_module.calculate_score
-
-                def safe_calculator(input_data: str, output_data: str) -> float:
-                    try:
-                        return calculator_func(input_data, output_data)
-                    except Exception as e:
-                        logger.error(f"Error in loaded score_calculator.py: {type(e).__name__} - {e!s}")
-                        return 0.0
-
-                return safe_calculator
-
-            logger.error(f"'calculate_score' function not found or not callable in {score_calculator_file_path}")
-            return lambda _input_data, _output_data: 0.0
-
-        except SyntaxError as e:
-            logger.error(f"Syntax error in generated score calculator code ({score_calculator_file_path}): {e.filename}:{e.lineno}: {e.msg}")
-            # Save the erroneous code for debugging if it hasn't been saved yet
-            if not score_calculator_file_path.exists():
+            def safe_calculator(input_data: Any, output_data: Any) -> float:
                 try:
-                    score_calculator_file_path.write_text(calculator_code)  # type: ignore
-                    logger.info(f"Saved erroneous calculator code to {score_calculator_file_path}")
-                except Exception as save_err:
-                    logger.error(f"Could not save erroneous calculator code: {save_err}")
-            return lambda _input_data, _output_data: 0.0
+                    # scorer.py の calculate_score は str ではなく Any を受け取る想定
+                    # 必要に応じて、ここで input_data と output_data を適切な型に変換する
+                    return calculator_func(input_data, output_data)
+                except Exception as e:
+                    logger.error(f"Error in score_calculator from scorer.py: {type(e).__name__} - {e!s}")
+                    return 0.0
+
+            return safe_calculator
         except Exception as e:
-            logger.error(f"Error creating score calculator with {score_calculator_file_path}: {type(e).__name__} - {e!s}")
+            logger.error(f"Error creating score calculator using scorer.py: {type(e).__name__} - {e!s}")
             return lambda _input_data, _output_data: 0.0
 
     async def generate_initial_solution(self, problem_info: Dict[str, Any]) -> str:
