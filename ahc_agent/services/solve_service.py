@@ -31,6 +31,7 @@ class SolveService:
         self.docker_manager = docker_manager
         self.config = config
         self.workspace_store = workspace_store
+        self.completed_steps: set[str] = set()
 
         # ワークスペースディレクトリのパスを取得
         self.workspace_dir = self.config.get("workspace.base_dir", str(Path.cwd()))
@@ -482,16 +483,26 @@ class SolveService:
             print("\n=== AHCAgent Interactive Mode (Service) ===")
             print(f"Problem: {self.workspace_store.problem_id}")
 
-            choices = [
-                Choice("Analyze the problem", "analyze"),
-                Choice("Develop solution strategy", "strategy"),
-                Choice("Generate/load test cases", "testcases"),
-                Choice("Generate initial solution", "initial"),
-                Choice("Run evolutionary process", "evolve"),
-                Choice("Show current status", "status"),
-                Choice("Show help", "help"),
-                Choice("Exit interactive mode", "exit"),
-            ]
+            step_definitions = {
+                "analyze": "Analyze the problem",
+                "strategy": "Develop solution strategy",
+                "testcases": "Generate/load test cases",
+                "initial": "Generate initial solution",
+                "evolve": "Run evolutionary process",
+            }
+
+            choices = []
+            for value, title in step_definitions.items():
+                prefix = "[済] " if value in self.completed_steps else ""
+                choices.append(Choice(title=f"{prefix}{title}", value=value))
+
+            choices.extend(
+                [
+                    Choice("Show current status", "status"),
+                    Choice("Show help", "help"),
+                    Choice("Exit interactive mode", "exit"),
+                ]
+            )
 
             # Dynamically enable/disable choices based on available data
             if not problem_analysis_data:
@@ -559,6 +570,7 @@ class SolveService:
                 analysis_result = await self.run_analyze_step(problem_text_to_analyze)
                 if analysis_result:
                     problem_analysis_data = analysis_result
+                    self.completed_steps.add("analyze")
                 else:
                     logger.error("Analysis step failed.")
 
@@ -569,6 +581,7 @@ class SolveService:
                 strategy_result = await self.run_strategy_step()
                 if strategy_result:
                     solution_strategy_data = strategy_result
+                    self.completed_steps.add("strategy")
                 else:
                     logger.error("Strategy step failed.")
 
@@ -595,6 +608,7 @@ class SolveService:
                 if testcase_result:
                     interactive_test_cases = testcase_result["test_cases"]
                     interactive_score_calculator = testcase_result["score_calculator"]
+                    self.completed_steps.add("testcases")
                 else:
                     logger.error("Testcases step failed.")
 
@@ -605,6 +619,7 @@ class SolveService:
                 initial_code_result = await self.run_initial_solution_step()
                 if initial_code_result:
                     current_initial_code = initial_code_result  # Store for potential use in evolve
+                    self.completed_steps.add("initial")
                     show_solution = await questionary.confirm("Show initial solution?", default=False).ask_async()
                     if show_solution:
                         print("\n=== Initial Solution ===")
@@ -670,6 +685,7 @@ class SolveService:
                 if evolution_result:
                     # Update current_initial_code to the best from this evolution run for subsequent evolves
                     current_initial_code = evolution_result["best_solution"]
+                    self.completed_steps.add("evolve")
                     show_best = await questionary.confirm("Show best solution from this evolution run?", default=False).ask_async()
                     if show_best:
                         print("\n=== Best Solution (Current Evolution Run) ===")

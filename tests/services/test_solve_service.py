@@ -1113,3 +1113,73 @@ async def test_run_initial_solution_step_generation_fails(mock_llm_client, mock_
         mock_pl_instance_global.generate_initial_solution.assert_called_once_with(sample_analysis_data)
         mock_workspace_store.save_solution.assert_not_called()
         assert result is None
+
+
+@pytest.mark.anyio
+async def test_interactive_mode_step_completion_visualization(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store, mocker):
+    from unittest.mock import AsyncMock, patch
+
+    # We need to patch questionary where it's used in solve_service.py
+    with patch("ahc_agent.services.solve_service.questionary") as mock_questionary_module:
+        # Setup the service
+        service = SolveService(mock_llm_client, mock_docker_manager, mock_config, mock_workspace_store)
+
+        # Mock step execution methods to simulate success and allow completion
+        # These are called by run_interactive_solve when a step is selected.
+        # For this test, we only care about the choices presented, not the execution itself,
+        # but they need to be valid async mocks if run_interactive_solve tries to await them.
+        service.run_analyze_step = AsyncMock(return_value={"title": "Test Problem"})
+        service.run_strategy_step = AsyncMock(return_value={"strategy": "Test Strategy"})
+        # ... other steps can be mocked if their completion status affects choices, but
+        # for now, the test focuses on the initial state of completed_steps.
+
+        # Simulate some steps being completed
+        service.completed_steps = {"analyze", "strategy"}
+
+        # Configure the mock for questionary.select().ask_async()
+        # This mock will be used by run_interactive_solve
+        mock_ask_async_result = AsyncMock(return_value="exit")  # Simulate user choosing to exit
+        mock_select_instance = MagicMock()
+        mock_select_instance.ask_async = mock_ask_async_result
+        mock_questionary_module.select.return_value = mock_select_instance
+
+        # Mock workspace store to provide necessary data to avoid early exits or errors
+        # if the interactive loop tries to load data before presenting choices.
+        mock_workspace_store.problem_id = "test_interactive_problem"
+        mock_workspace_store.load_problem_analysis.return_value = {"title": "Initial Analysis"}  # For choice enabling
+        mock_workspace_store.load_solution_strategy.return_value = {"approach": "Initial Strategy"}  # For choice enabling
+
+        # Run interactive solve. It should call questionary.select.
+        await service.run_interactive_solve(problem_text_initial="Test problem text")
+
+        # Assert that questionary.select was called
+        mock_questionary_module.select.assert_called()
+
+        # Get the choices passed to questionary.select
+        # This assumes questionary.select was called at least once.
+        call_args_list = mock_questionary_module.select.call_args_list
+        assert len(call_args_list) > 0, "questionary.select was not called"
+
+        # The choices are in the keyword arguments of the first call
+        choices_passed = call_args_list[0][1]["choices"]  # choices is a kwarg
+
+        expected_step_prefixes = {
+            "analyze": "[済] ",
+            "strategy": "[済] ",
+            "testcases": "",  # Not completed
+            "initial": "",  # Not completed
+            "evolve": "",  # Not completed
+        }
+
+        # Check titles of the relevant choices
+        for choice in choices_passed:
+            if choice.value in expected_step_prefixes:  # We only care about our main steps
+                expected_prefix = expected_step_prefixes[choice.value]
+                actual_title = choice.title  # title is an attribute of Choice object
+
+                if expected_prefix:
+                    assert actual_title.startswith(expected_prefix), (
+                        f"Choice '{choice.value}' title ('{actual_title}') should start with '{expected_prefix}'"
+                    )
+                else:
+                    assert not actual_title.startswith("[済] "), f"Choice '{choice.value}' title ('{actual_title}') should not start with '[済] '"
